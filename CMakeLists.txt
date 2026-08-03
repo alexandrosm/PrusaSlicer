@@ -155,6 +155,13 @@ if (MSVC)
     if (SLIC3R_MSVC_DEBUG_SYMBOLS)
         add_compile_options(/Zi)
     endif()
+    # /DEBUG changes link.exe's defaults to /OPT:NOREF and /OPT:NOICF. Release
+    # packages keep PDBs, so restore the normal Release elimination explicitly
+    # instead of retaining unreachable and duplicate COMDATs in shipped PE files.
+    add_link_options(
+        "$<$<CONFIG:RELEASE>:/OPT:REF>"
+        "$<$<CONFIG:RELEASE>:/OPT:ICF>"
+    )
     # Disable STL4007: Many result_type typedefs and all argument_type, first_argument_type, and second_argument_type typedefs are deprecated in C++17.
     #FIXME Remove this line after eigen library adapts to the new C++17 adaptor rules.
     add_compile_options(-D_SILENCE_CXX17_ADAPTOR_TYPEDEFS_DEPRECATION_WARNING)
