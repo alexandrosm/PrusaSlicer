@@ -58,6 +58,7 @@ these documentation pages:
 * [macOS](doc/How%20to%20build%20-%20Mac%20OS.md)
 * [Windows](doc/How%20to%20build%20-%20Windows.md)
 * [Fast development builds](doc/Fast-build.md)
+* [Windows package-size measurements](doc/Windows-package-size.md)
 
 ### Can I help?
 
