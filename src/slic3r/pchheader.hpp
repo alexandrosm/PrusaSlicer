@@ -184,6 +184,9 @@
 #include <wx/wxprec.h>
 #include <wx/zipstrm.h>
 
+#ifndef SLIC3R_PCH_STABLE_ONLY
+// The default PCH remains source-compatible with existing builds. Fast
+// development presets omit first-party headers to reduce invalidation fanout.
 #include "libslic3r/Config.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/TriangleMesh.hpp"
@@ -198,3 +201,4 @@
 #ifdef _WIN32
 #include "GUI/format.hpp"
 #endif // _WIN32
+#endif

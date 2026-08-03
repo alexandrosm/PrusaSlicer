@@ -28,7 +28,7 @@
 #include <utility>
 #include <cstddef>
 
-#include "nanosvg/nanosvg.h"
+#include <nanosvg.h>
 
 namespace Slic3r {
 class SLAPrint;

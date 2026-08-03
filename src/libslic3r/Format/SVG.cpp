@@ -7,7 +7,7 @@
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include <boost/log/trivial.hpp>
-#include <nanosvg/nanosvg.h>
+#include <nanosvg.h>
 #include <memory>
 #include <string>
 #include <utility>

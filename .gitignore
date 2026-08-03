@@ -1,6 +1,11 @@
 Build
 Build.bat
 /build/
+/build-default/
+/build-no-occt/
+/build-fast-gui/
+/build-fast-cli/
+/shareddeps/
 MYMETA.json
 MYMETA.yml
 _build
@@ -20,4 +25,5 @@ deps/build-linux/*
 **/.DS_Store
 **/.idea/
 .pkg_cache
+.compiled_cache
 CMakeUserPresets.json

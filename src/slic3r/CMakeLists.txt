@@ -408,7 +408,6 @@ set(SLIC3R_GUI_SOURCES
     Utils/ServiceConfig.cpp
 )
 
-find_package(NanoSVG REQUIRED)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(OpenSSL REQUIRED)
 endif()
@@ -490,6 +489,9 @@ endif()
 #endif()
 
 if (SLIC3R_PCH AND NOT SLIC3R_SYNTAXONLY)
+    if (SLIC3R_PCH_STABLE_ONLY)
+        target_compile_definitions(libslic3r_gui PRIVATE SLIC3R_PCH_STABLE_ONLY)
+    endif ()
     add_precompiled_header(libslic3r_gui pchheader.hpp FORCEINCLUDE)
 endif ()
 

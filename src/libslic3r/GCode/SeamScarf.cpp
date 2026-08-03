@@ -68,7 +68,7 @@ double get_length(tcb::span<const GCode::SmoothPathElement> smooth_path) {
     Point previous_point{smooth_path.front().path.front().point};
 
     for (const GCode::SmoothPathElement &element : smooth_path) {
-        for (const Geometry::ArcWelder::Segment &segment : element.path) {
+        for (const ::Slic3r::Geometry::ArcWelder::Segment &segment : element.path) {
             result += (segment.point - previous_point).cast<double>().norm();
             previous_point = segment.point;
         }
@@ -79,9 +79,9 @@ double get_length(tcb::span<const GCode::SmoothPathElement> smooth_path) {
 GCode::SmoothPath convert_to_smooth(tcb::span<const ExtrusionPath> paths) {
     GCode::SmoothPath result;
     for (const ExtrusionPath &path : paths) {
-        Geometry::ArcWelder::Path smooth_path;
+        ::Slic3r::Geometry::ArcWelder::Path smooth_path;
         for (const Point &point : path.polyline) {
-            smooth_path.push_back(Geometry::ArcWelder::Segment{point});
+            smooth_path.push_back(::Slic3r::Geometry::ArcWelder::Segment{point});
         }
         result.push_back({path.attributes(), smooth_path});
     }
@@ -152,7 +152,7 @@ GCode::SmoothPath lineary_increase_extrusion_height(
 
     std::optional<Point> previous_point{};
     for (GCode::SmoothPathElement &element : result) {
-        for (Geometry::ArcWelder::Segment &segment : element.path) {
+        for (::Slic3r::Geometry::ArcWelder::Segment &segment : element.path) {
             if (!previous_point) {
                 segment.e_fraction = 0;
                 segment.height_fraction = start_height;
@@ -183,7 +183,7 @@ GCode::SmoothPath lineary_readuce_extrusion_amount(
 
     std::optional<Point> previous_point{};
     for (GCode::SmoothPathElement &element : result) {
-        for (Geometry::ArcWelder::Segment &segment : element.path) {
+        for (::Slic3r::Geometry::ArcWelder::Segment &segment : element.path) {
             if (!previous_point) {
                 segment.e_fraction = 1.0;
             } else {

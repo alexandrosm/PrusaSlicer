@@ -1,7 +1,4 @@
 
-include(ProcessorCount)
-ProcessorCount(NPROC)
-
 set(_conf_cmd "./config")
 set(_cross_arch "")
 set(_cross_comp_prefix_line "")
@@ -30,6 +27,8 @@ ExternalProject_Add(dep_OpenSSL
         no-ssl3-method
         no-dynamic-engine
         -Wa,--noexecstack
-    BUILD_COMMAND make depend && make "-j${NPROC}"
+    BUILD_COMMAND make depend && make "-j${_dep_build_threads}"
     INSTALL_COMMAND make install_sw
+    USES_TERMINAL_BUILD TRUE
+    USES_TERMINAL_INSTALL TRUE
 )

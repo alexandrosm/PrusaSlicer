@@ -215,12 +215,14 @@ IF "%PS_STEPS_DIRTY%" EQU "" (
     CALL :MAKE_OR_CLEAN_DIRECTORY "%PS_DESTDIR%"
 )
 cd deps\build || GOTO :END
-cmake.exe .. -DDESTDIR="%PS_DESTDIR%"
+cmake.exe .. -DDESTDIR="%PS_DESTDIR%" -DDEP_DOWNLOAD_DIR="%~dp0deps\.pkg_cache"
 IF %ERRORLEVEL% NEQ 0 IF "%PS_STEPS_DIRTY%" NEQ "" (
-    (del CMakeCache.txt && cmake.exe .. -DDESTDIR="%PS_DESTDIR%") || GOTO :END
+    (del CMakeCache.txt && cmake.exe .. -DDESTDIR="%PS_DESTDIR%" -DDEP_DOWNLOAD_DIR="%~dp0deps\.pkg_cache") || GOTO :END
 ) ELSE GOTO :END
 (echo %PS_DESTDIR%)> "%PS_DEPS_PATH_FILE%"
-msbuild /m ALL_BUILD.vcxproj /p:Configuration=%PS_CONFIG% /v:quiet %PS_PRIORITY% || GOTO :END
+REM Each ExternalProject already uses every logical processor. Keep the outer
+REM graph serial to avoid launching multiple full-machine builds at once.
+msbuild /m:1 ALL_BUILD.vcxproj /p:Configuration=%PS_CONFIG% /v:quiet %PS_PRIORITY% || GOTO :END
 cd ..\..
 IF /I "%PS_STEPS:~0,4%" EQU "deps" GOTO :RUN_APP
 

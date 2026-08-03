@@ -5,7 +5,7 @@
 #include "NSVGUtils.hpp"
 
 #include <boost/nowide/fstream.hpp>
-#include <nanosvg/nanosvg.h>
+#include <nanosvg.h>
 #include <array>
 #include <algorithm>
 #include <sstream>

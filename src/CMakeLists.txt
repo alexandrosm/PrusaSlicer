@@ -3,6 +3,7 @@ project(PrusaSlicer-native)
 
 add_subdirectory(clipper)
 find_package(Qhull 7.2 REQUIRED)
+find_package(NanoSVG REQUIRED)
 add_library(qhull INTERFACE)
 if(SLIC3R_STATIC)
     slic3r_remap_configs("Qhull::qhullcpp;Qhull::qhullstatic_r" RelWithDebInfo Release)
@@ -52,8 +53,6 @@ if (SLIC3R_GUI)
     endif()
 
     find_package(JPEG MODULE QUIET)
-    find_package(NanoSVG REQUIRED)
-
     string(REGEX MATCH "wxpng" WX_PNG_BUILTIN ${wxWidgets_LIBRARIES})
     if (PNG_FOUND AND NOT WX_PNG_BUILTIN)
         list(FILTER wxWidgets_LIBRARIES EXCLUDE REGEX png)
@@ -161,8 +160,10 @@ endif ()
 if (SLIC3R_GUI)
     target_link_libraries(PrusaSlicer PRIVATE libslic3r_gui)
     if (MSVC)
-        # Generate debug symbols even in release mode.
-        target_link_options(PrusaSlicer PUBLIC "$<$<CONFIG:RELEASE>:/DEBUG>")
+        if (SLIC3R_MSVC_DEBUG_SYMBOLS)
+            # Generate debug symbols even in release mode.
+            target_link_options(PrusaSlicer PUBLIC "$<$<CONFIG:RELEASE>:/DEBUG>")
+        endif()
         target_link_libraries(PrusaSlicer PRIVATE user32.lib Setupapi.lib)
     elseif (MINGW)
         target_link_libraries(PrusaSlicer PRIVATE ws2_32 uxtheme setupapi)
@@ -186,7 +187,7 @@ if (WIN32)
 
     add_executable(PrusaSlicer_app_gui WIN32 PrusaSlicer_app_msvc.cpp ${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicer.rc)
     # Generate debug symbols even in release mode.
-    if(MSVC)
+    if(MSVC AND SLIC3R_MSVC_DEBUG_SYMBOLS)
         target_link_options(PrusaSlicer_app_gui PUBLIC "$<$<CONFIG:RELEASE>:/DEBUG>")
     endif()
     target_compile_definitions(PrusaSlicer_app_gui PRIVATE -DSLIC3R_WRAPPER_NOCONSOLE)
@@ -196,7 +197,7 @@ if (WIN32)
 
     add_executable(PrusaSlicer_app_console PrusaSlicer_app_msvc.cpp ${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicer.rc)
     # Generate debug symbols even in release mode.
-    if (MSVC)
+    if (MSVC AND SLIC3R_MSVC_DEBUG_SYMBOLS)
         target_link_options(PrusaSlicer_app_console PUBLIC "$<$<CONFIG:RELEASE>:/DEBUG>")
     endif ()
     target_compile_definitions(PrusaSlicer_app_console PRIVATE -DSLIC3R_WRAPPER_CONSOLE)
@@ -206,7 +207,7 @@ if (WIN32)
 
     add_executable(PrusaSlicer_app_gcodeviewer WIN32 PrusaSlicer_app_msvc.cpp ${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicer-gcodeviewer.rc)
     # Generate debug symbols even in release mode.
-    if (MSVC)
+    if (MSVC AND SLIC3R_MSVC_DEBUG_SYMBOLS)
         target_link_options(PrusaSlicer_app_gcodeviewer PUBLIC "$<$<CONFIG:RELEASE>:/DEBUG>")
     endif ()
     target_compile_definitions(PrusaSlicer_app_gcodeviewer PRIVATE -DSLIC3R_WRAPPER_NOCONSOLE -DSLIC3R_WRAPPER_GCODEVIEWER)
@@ -253,9 +254,39 @@ if (WIN32)
         endif()
     endif ()
 
-    # This has to be a separate target due to the windows command line lenght limits
-    add_custom_target(PrusaSlicerDllsCopy ALL DEPENDS PrusaSlicer)
-    prusaslicer_copy_dlls(PrusaSlicerDllsCopy)
+    # This has to be a separate target due to the Windows command-line length
+    # limits. Single-config generators get a real output so a no-op targeted
+    # build does not stage unchanged runtime DLLs on every invocation.
+    if (CMAKE_CONFIGURATION_TYPES)
+        add_custom_target(PrusaSlicerDllsCopy ALL DEPENDS PrusaSlicer)
+        prusaslicer_copy_dlls(PrusaSlicerDllsCopy)
+    else ()
+        if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+            set(_runtime_dll_bits 64)
+        else ()
+            set(_runtime_dll_bits 32)
+        endif ()
+        set(_gmp_runtime_dll "${TOP_LEVEL_PROJECT_DIR}/deps/+GMP/gmp/lib/win${_runtime_dll_bits}/libgmp-10.dll")
+        set(_mpfr_runtime_dll "${TOP_LEVEL_PROJECT_DIR}/deps/+MPFR/mpfr/lib/win${_runtime_dll_bits}/libmpfr-4.dll")
+        set(_gmp_runtime_destination "${CMAKE_CURRENT_BINARY_DIR}/libgmp-10.dll")
+        set(_mpfr_runtime_destination "${CMAKE_CURRENT_BINARY_DIR}/libmpfr-4.dll")
+        set(_runtime_dll_stamp "${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicerDllsCopy.stamp")
+        add_custom_command(
+            OUTPUT "${_runtime_dll_stamp}"
+            BYPRODUCTS "${_gmp_runtime_destination}" "${_mpfr_runtime_destination}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_gmp_runtime_dll}" "${_gmp_runtime_destination}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_mpfr_runtime_dll}" "${_mpfr_runtime_destination}"
+            COMMAND ${CMAKE_COMMAND} -E touch "${_runtime_dll_stamp}"
+            DEPENDS PrusaSlicer "${_gmp_runtime_dll}" "${_mpfr_runtime_dll}"
+            COMMENT "Staging PrusaSlicer runtime DLLs"
+            VERBATIM)
+        add_custom_target(PrusaSlicerDllsCopy ALL DEPENDS "${_runtime_dll_stamp}")
+    endif ()
+    # The fast build presets intentionally build one wrapper target instead of
+    # ALL_BUILD. Keep the runtime DLL staging step in that target-specific path.
+    add_dependencies(PrusaSlicer_app_gui PrusaSlicerDllsCopy)
+    add_dependencies(PrusaSlicer_app_console PrusaSlicerDllsCopy)
+    add_dependencies(PrusaSlicer_app_gcodeviewer PrusaSlicerDllsCopy)
 
 else ()
     if (APPLE)
@@ -285,6 +316,19 @@ else ()
         COMMENT "Symlinking the resources directory into the build tree"
         VERBATIM)
 endif ()
+
+# A platform-neutral target for a runnable fast-build artifact. On Windows the
+# real entry point is a shim executable; elsewhere PrusaSlicer is executable.
+if (WIN32)
+    if (SLIC3R_GUI)
+        set(_prusaslicer_fast_target PrusaSlicer_app_gui)
+    else ()
+        set(_prusaslicer_fast_target PrusaSlicer_app_console)
+    endif ()
+else ()
+    set(_prusaslicer_fast_target PrusaSlicer)
+endif ()
+add_custom_target(PrusaSlicer_fast DEPENDS ${_prusaslicer_fast_target})
 
 # Slic3r binary install target
 if (WIN32)

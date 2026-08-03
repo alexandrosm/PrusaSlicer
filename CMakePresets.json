@@ -25,7 +25,8 @@
             "binaryDir": "${sourceDir}/build-no-occt",
             "cacheVariables": {
                 "SLIC3R_ENABLE_FORMAT_STEP": false,
-                "PrusaSlicer_DEPS_PRESET": "no-occt"
+                "PrusaSlicer_DEPS_PRESET": "no-occt",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build-no-occt/dist"
             }
         },
         {
@@ -41,6 +42,64 @@
                 "SLIC3R_PCH": true,
                 "PrusaSlicer_BUILD_DEPS": false
             }
+        },
+        {
+            "name": "fast-base",
+            "hidden": true,
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+                "SLIC3R_UNITY_BUILD": true,
+                "SLIC3R_UNITY_BUILD_BATCH_SIZE": "8",
+                "SLIC3R_STATIC": true,
+                "SLIC3R_GTK": "3",
+                "SLIC3R_PCH": true,
+                "SLIC3R_PCH_STABLE_ONLY": true,
+                "SLIC3R_MSVC_COMPILE_PARALLEL": false,
+                "SLIC3R_MSVC_DEBUG_SYMBOLS": false,
+                "SLIC3R_ENC_CHECK": false,
+                "SLIC3R_BUILD_TESTS": false,
+                "SLIC3R_BUILD_SANDBOXES": false,
+                "SLIC3R_ENABLE_FORMAT_STEP": false,
+                "PrusaSlicer_BUILD_DEPS": false
+            }
+        },
+        {
+            "name": "fast-gui",
+            "displayName": "Fast GUI development build",
+            "description": "Ninja + PCH + unity build, Release-only lean dependencies, no tests or STEP support",
+            "inherits": "fast-base",
+            "binaryDir": "${sourceDir}/build-fast-gui",
+            "cacheVariables": {
+                "SLIC3R_GUI": true,
+                "CMAKE_PREFIX_PATH": "${sourceDir}/deps/build-fast-gui/destdir/usr/local",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build-fast-gui/dist"
+            }
+        },
+        {
+            "name": "fast-cli",
+            "displayName": "Lean command-line build",
+            "description": "Headless Ninja + PCH + unity build with GUI, tests, and STEP dependencies removed",
+            "inherits": "fast-base",
+            "binaryDir": "${sourceDir}/build-fast-cli",
+            "cacheVariables": {
+                "SLIC3R_GUI": false,
+                "CMAKE_PREFIX_PATH": "${sourceDir}/deps/build-fast-cli/destdir/usr/local",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build-fast-cli/dist"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "fast-gui",
+            "configurePreset": "fast-gui",
+            "targets": ["PrusaSlicer_fast"]
+        },
+        {
+            "name": "fast-cli",
+            "configurePreset": "fast-cli",
+            "targets": ["PrusaSlicer_fast"]
         }
     ]
 }

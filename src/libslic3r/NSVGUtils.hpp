@@ -15,7 +15,7 @@
 #include "Polygon.hpp"
 #include "ExPolygon.hpp"
 #include "EmbossShape.hpp" // ExPolygonsWithIds
-#include "nanosvg/nanosvg.h"    // load SVG file
+#include <nanosvg.h>    // load SVG file
 #include "libslic3r/Point.hpp"
 #include "libslic3r/libslic3r.h"
 

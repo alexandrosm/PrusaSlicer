@@ -20,8 +20,8 @@
     #include <wx/rawbmp.h>
 #endif /* __WXGTK2__ */
 
-#include <nanosvg/nanosvg.h>
-#include <nanosvg/nanosvgrast.h>
+#include <nanosvg.h>
+#include <nanosvgrast.h>
 
 namespace Slic3r { namespace GUI {
 

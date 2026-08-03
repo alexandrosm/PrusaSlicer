@@ -162,7 +162,6 @@ set(SLIC3R_SOURCES
     Format/SLAArchiveFormatRegistry.hpp
     Format/SLAArchiveFormatRegistry.cpp
     Format/PrintRequest.cpp
-    Format/PrintRequest.cpp
     GCode/ThumbnailData.cpp
     GCode/ThumbnailData.hpp
     GCode/Thumbnails.cpp
@@ -529,8 +528,6 @@ set(SLIC3R_SOURCES
     Arachne/utils/PolylineStitcher.hpp
     Arachne/utils/PolylineStitcher.cpp
     Geometry/Voronoi.cpp
-    Geometry/VoronoiUtils.hpp
-    Geometry/VoronoiUtils.cpp
     Arachne/PerimeterOrder.hpp
     Arachne/PerimeterOrder.cpp
     Arachne/SkeletalTrapezoidation.hpp
@@ -555,6 +552,50 @@ if (APPLE)
 endif ()
 
 add_library(libslic3r STATIC ${SLIC3R_SOURCES})
+
+if (SLIC3R_UNITY_BUILD)
+    # These translation units intentionally carry implementation/configuration
+    # state which must not leak into a generated unity translation unit.
+    set(_slic3r_unity_implementation_sources
+        clipper.cpp
+        Emboss.cpp
+        Fill/FillAdaptive.cpp
+        Format/SL1_SVG.cpp
+        PlaceholderParser.cpp
+        PrintConfig.cpp
+        SLA/RasterBase.cpp)
+    # Config.cpp's Cereal registrations are deliberately instantiated in their
+    # own translation unit. It still consumes a group slot below so isolating it
+    # cannot reshuffle any of the already-audited groups.
+    set(_slic3r_unity_isolated_sources
+        ${_slic3r_unity_implementation_sources}
+        Config.cpp)
+    set_source_files_properties(
+        ${_slic3r_unity_isolated_sources}
+        PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
+    # Fixed groups make the unity layout deterministic. Automatic BATCH mode
+    # repacks every later source whenever one file is isolated, which can expose
+    # unrelated anonymous-namespace collisions in a previously validated tree.
+    set(_slic3r_unity_group 0)
+    set(_slic3r_unity_group_members 0)
+    foreach(_source IN LISTS SLIC3R_SOURCES)
+        if (_source MATCHES "\\.(c|cc|cpp|cxx)$" AND
+            NOT _source IN_LIST _slic3r_unity_implementation_sources)
+            set_property(SOURCE "${_source}" PROPERTY UNITY_GROUP
+                "libslic3r_core_${_slic3r_unity_group}")
+            math(EXPR _slic3r_unity_group_members
+                "${_slic3r_unity_group_members} + 1")
+            if (_slic3r_unity_group_members EQUAL SLIC3R_UNITY_BUILD_BATCH_SIZE)
+                math(EXPR _slic3r_unity_group "${_slic3r_unity_group} + 1")
+                set(_slic3r_unity_group_members 0)
+            endif()
+        endif()
+    endforeach()
+    set_target_properties(libslic3r PROPERTIES
+        UNITY_BUILD ON
+        UNITY_BUILD_MODE GROUP)
+endif()
 
 if (WIN32)
     target_compile_definitions(libslic3r PUBLIC NOMINMAX)
@@ -607,7 +648,7 @@ if (_opts)
     target_compile_options(libslic3r_cgal PRIVATE "${_opts_bad}")
 endif()
 
-target_link_libraries(libslic3r_cgal PRIVATE ${_cgal_tgt} libigl)
+target_link_libraries(libslic3r_cgal PRIVATE ${_cgal_tgt} libigl NanoSVG::nanosvg)
 target_link_libraries(libslic3r_cgal PUBLIC semver admesh localesutils)
 
 if (MSVC AND "${CMAKE_SIZEOF_VOID_P}" STREQUAL "4") # 32 bit MSVC workaround
@@ -645,6 +686,7 @@ target_link_libraries(libslic3r PRIVATE
     nlohmann_json::nlohmann_json
 )
 target_link_libraries(libslic3r PUBLIC
+    NanoSVG::nanosvg
     Eigen3::Eigen
     semver
     admesh
@@ -681,5 +723,8 @@ if (APPLE)
 endif ()
 
 if (SLIC3R_PCH AND NOT SLIC3R_SYNTAXONLY)
+    if (SLIC3R_PCH_STABLE_ONLY)
+        target_compile_definitions(libslic3r PRIVATE SLIC3R_PCH_STABLE_ONLY)
+    endif ()
     add_precompiled_header(libslic3r pchheader.hpp FORCEINCLUDE)
 endif ()

@@ -682,7 +682,7 @@ PrintRegionConfig region_config_from_model_volume(const PrintRegionConfig  &defa
                                                   const ModelVolume        &volume,
                                                   size_t                    num_physical_extruders,
                                                   const VirtualExtruders      &virtual_extruders,
-                                                  std::optional<unsigned int> *out_source_virtual_extruder_id = nullptr);
+                                                  std::optional<unsigned int> *out_source_virtual_extruder_id);
 
 void print_region_ref_inc(PrintRegion &r) { ++ r.m_ref_cnt; }
 void print_region_ref_reset(PrintRegion &r) { r.m_ref_cnt = 0; }
@@ -742,7 +742,7 @@ bool verify_update_print_object_regions(
                             } else if (PrintObjectRegions::BoundingBox parent_bbox = find_modifier_volume_extents(layer_range, parent_region_id); parent_bbox.intersects(*bbox))
                                 // Such parent region does not exist. If it is needed, then we need to reslice.
                                 // Only create new region for a modifier, which actually modifies config of it's parent.
-                                if (PrintRegionConfig config = region_config_from_model_volume(parent_region.region->config(), nullptr, **it_model_volume, num_physical_extruders, virtual_extruders);
+                                if (PrintRegionConfig config = region_config_from_model_volume(parent_region.region->config(), nullptr, **it_model_volume, num_physical_extruders, virtual_extruders, nullptr);
                                     config != parent_region.region->config())
                                     // This modifier newly overrides a region, which it did not before. We need to reslice.
                                     return false;

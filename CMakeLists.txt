@@ -37,12 +37,26 @@ option(SLIC3R_STATIC 			"Compile PrusaSlicer with static libraries (Boost, TBB, 
 option(SLIC3R_GUI    			"Compile PrusaSlicer with GUI components (OpenGL, wxWidgets)" 1)
 option(SLIC3R_FHS               "Assume PrusaSlicer is to be installed in a FHS directory structure" 0)
 option(SLIC3R_PCH               "Use precompiled headers" 1)
+option(SLIC3R_PCH_STABLE_ONLY   "Keep frequently edited first-party headers out of precompiled headers" 0)
+option(SLIC3R_UNITY_BUILD       "Use unity compilation for the first-party core library" 0)
+set(SLIC3R_UNITY_BUILD_BATCH_SIZE "8" CACHE STRING "Source files per core-library unity batch")
 option(SLIC3R_MSVC_COMPILE_PARALLEL "Compile on Visual Studio in parallel" 1)
+option(SLIC3R_MSVC_DEBUG_SYMBOLS "Generate debug symbols in MSVC Release builds" 1)
 option(SLIC3R_ASAN              "Enable ASan on Clang and GCC" 0)
 option(SLIC3R_UBSAN             "Enable UBSan on Clang and GCC" 0)
 option(SLIC3R_ENABLE_FORMAT_STEP "Enable compilation of STEP file support" ON)
 option(SLIC3R_LOG_TO_FILE       "Enable logging into file")
 option(SLIC3R_REPO_URL          "Preset repo URL")
+
+if (SLIC3R_UNITY_BUILD AND CMAKE_VERSION VERSION_LESS 3.18)
+    message(FATAL_ERROR "SLIC3R_UNITY_BUILD requires CMake 3.18 or newer")
+endif()
+if (SLIC3R_UNITY_BUILD AND NOT SLIC3R_UNITY_BUILD_BATCH_SIZE MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "SLIC3R_UNITY_BUILD_BATCH_SIZE must be a positive integer")
+endif()
+
+include("${PROJECT_SOURCE_DIR}/cmake/modules/CompilerCache.cmake")
+slic3r_enable_compiler_cache()
 
 # SLIC3R_OPENGL_ES can be enabled only if SLIC3R_GUI is enabled.
 CMAKE_DEPENDENT_OPTION(SLIC3R_OPENGL_ES "Compile PrusaSlicer targeting OpenGL ES" OFF "SLIC3R_GUI" OFF)
@@ -135,8 +149,12 @@ if (MSVC)
     endif ()
     # /bigobj (Increase Number of Sections in .Obj file)
     # error C3859: virtual memory range for PCH exceeded; please recompile with a command line option of '-Zm90' or greater
-    # Generate symbols at every build target, even for the release.
-    add_compile_options(-bigobj -Zm520 /Zi)
+    add_compile_options(-bigobj -Zm520)
+    # Release symbols are useful for distributable builds but add substantial
+    # compile, link, and disk overhead to fast local builds.
+    if (SLIC3R_MSVC_DEBUG_SYMBOLS)
+        add_compile_options(/Zi)
+    endif()
     # Disable STL4007: Many result_type typedefs and all argument_type, first_argument_type, and second_argument_type typedefs are deprecated in C++17.
     #FIXME Remove this line after eigen library adapts to the new C++17 adaptor rules.
     add_compile_options(-D_SILENCE_CXX17_ADAPTOR_TYPEDEFS_DEPRECATION_WARNING)
@@ -234,8 +252,6 @@ if (APPLE)
 endif ()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    find_package(PkgConfig REQUIRED)
-
     if (CMAKE_VERSION VERSION_LESS "3.1")
         # Workaround for an old CMake, which does not understand CMAKE_CXX_STANDARD.
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
@@ -245,7 +261,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(THREADS_PREFER_PTHREAD_FLAG ON)
     find_package(Threads REQUIRED)
 
-    find_package(DBus1 REQUIRED)
+    if (SLIC3R_GUI)
+        find_package(DBus1 REQUIRED)
+    endif()
 endif()
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUXX)
@@ -439,18 +457,20 @@ slic3r_remap_configs(TBB::tbbmalloc RelWithDebInfo Release)
 # The Intel TBB library will use the std::exception_ptr feature of C++11.
 # add_definitions(-DTBB_USE_CAPTURED_EXCEPTION=0)
 
-find_package(CURL REQUIRED)
+if (SLIC3R_GUI)
+    find_package(CURL REQUIRED)
 
-add_library(libcurl INTERFACE)
-target_link_libraries(libcurl INTERFACE CURL::libcurl)
+    add_library(libcurl INTERFACE)
+    target_link_libraries(libcurl INTERFACE CURL::libcurl)
 
-# Fixing curl's cmake config script bugs
-if (NOT WIN32)
-    # Required by libcurl
-    find_package(ZLIB REQUIRED)
-    target_link_libraries(libcurl INTERFACE ZLIB::ZLIB)
-else()
-    target_link_libraries(libcurl INTERFACE crypt32)
+    # Fixing curl's cmake config script bugs
+    if (NOT WIN32)
+        # Required by libcurl
+        find_package(ZLIB REQUIRED)
+        target_link_libraries(libcurl INTERFACE ZLIB::ZLIB)
+    else()
+        target_link_libraries(libcurl INTERFACE crypt32)
+    endif()
 endif()
 
 ## OPTIONAL packages
@@ -471,16 +491,18 @@ endif ()
 
 find_package(PNG REQUIRED)
 
-set(OpenGL_GL_PREFERENCE "LEGACY")
-find_package(OpenGL REQUIRED)
+if (SLIC3R_GUI)
+    set(OpenGL_GL_PREFERENCE "LEGACY")
+    find_package(OpenGL REQUIRED)
 
-# Find glew or use bundled version
-if (SLIC3R_STATIC AND NOT SLIC3R_STATIC_EXCLUDE_GLEW)
-    set(GLEW_USE_STATIC_LIBS ON)
-    set(GLEW_VERBOSE ON)
+    # Find glew or use bundled version
+    if (SLIC3R_STATIC AND NOT SLIC3R_STATIC_EXCLUDE_GLEW)
+        set(GLEW_USE_STATIC_LIBS ON)
+        set(GLEW_VERBOSE ON)
+    endif()
+
+    find_package(GLEW REQUIRED)
 endif()
-
-find_package(GLEW REQUIRED)
 
 # Find the Cereal serialization library
 find_package(cereal REQUIRED)

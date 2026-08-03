@@ -3,6 +3,7 @@
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "RemovableDriveManager.hpp"
+#include "format.hpp"
 #include "libslic3r/Platform.hpp"
 #include <libslic3r/libslic3r.h>
 
@@ -23,8 +24,7 @@
 #include <devpkey.h>
 #include <usbioctl.h>
 
-#include <atlbase.h>
-#include <atlcom.h>
+#include <wrl/client.h>
 #include <shldisp.h>
 #else
 // unix, linux & OSX includes
@@ -599,47 +599,54 @@ void eject_alt(std::string path, wxEvtHandler* callback_evt_handler, DriveData d
 bool eject_inner(const std::string& path)
 {
 	std::wstring wpath = boost::nowide::widen(path);
-	CoInitialize(nullptr);
-	CComPtr<IShellDispatch> pShellDisp;
-	HRESULT hr = pShellDisp.CoCreateInstance(CLSID_Shell, nullptr, CLSCTX_INPROC_SERVER);
-	if (!SUCCEEDED(hr)) {
-		BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: Attempt to get Shell pointer has failed.", path);
-		CoUninitialize();
+	const HRESULT coinit_hr = CoInitialize(nullptr);
+	if (FAILED(coinit_hr) && coinit_hr != RPC_E_CHANGED_MODE) {
+		BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: COM initialization has failed.", path);
 		return false;
 	}
-	CComPtr<Folder> pFolder;
-	VARIANT vtDrives;
-	VariantInit(&vtDrives);
-	vtDrives.vt = VT_I4;
-	vtDrives.lVal = ssfDRIVES;
-	hr = pShellDisp->NameSpace(vtDrives, &pFolder);
-	if (!SUCCEEDED(hr)) {
-		BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: Attempt to create Namespace has failed.", path);
-		CoUninitialize();
-		return false;
-	}
-	CComPtr<FolderItem> pItem;
-	hr = pFolder->ParseName(static_cast<BSTR>(const_cast<wchar_t*>(wpath.c_str())), &pItem);
-	if (!SUCCEEDED(hr)) {
-		BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: Attempt to Parse name has failed.", path);
-		CoUninitialize();
-		return false;
-	}
-	VARIANT vtEject;
-	VariantInit(&vtEject);
-	vtEject.vt = VT_BSTR;
-	vtEject.bstrVal = SysAllocString(L"Eject");
-	hr = pItem->InvokeVerb(vtEject);
-	if (!SUCCEEDED(hr)) {
-		BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: Attempt to Invoke Verb has failed.", path);
+
+	// Keep every COM pointer in this scope so it is released before CoUninitialize.
+	const bool success = [&]() {
+		Microsoft::WRL::ComPtr<IShellDispatch> pShellDisp;
+		HRESULT hr = CoCreateInstance(CLSID_Shell, nullptr, CLSCTX_INPROC_SERVER,
+			IID_PPV_ARGS(pShellDisp.GetAddressOf()));
+		if (!SUCCEEDED(hr)) {
+			BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: Attempt to get Shell pointer has failed.", path);
+			return false;
+		}
+		Microsoft::WRL::ComPtr<Folder> pFolder;
+		VARIANT vtDrives;
+		VariantInit(&vtDrives);
+		vtDrives.vt = VT_I4;
+		vtDrives.lVal = ssfDRIVES;
+		hr = pShellDisp->NameSpace(vtDrives, pFolder.GetAddressOf());
+		if (!SUCCEEDED(hr)) {
+			BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: Attempt to create Namespace has failed.", path);
+			return false;
+		}
+		Microsoft::WRL::ComPtr<FolderItem> pItem;
+		hr = pFolder->ParseName(static_cast<BSTR>(const_cast<wchar_t*>(wpath.c_str())), pItem.GetAddressOf());
+		if (!SUCCEEDED(hr)) {
+			BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: Attempt to Parse name has failed.", path);
+			return false;
+		}
+		VARIANT vtEject;
+		VariantInit(&vtEject);
+		vtEject.vt = VT_BSTR;
+		vtEject.bstrVal = SysAllocString(L"Eject");
+		hr = pItem->InvokeVerb(vtEject);
 		VariantClear(&vtEject);
+		if (!SUCCEEDED(hr)) {
+			BOOST_LOG_TRIVIAL(error) << GUI::format("Ejecting of %1% has failed: Attempt to Invoke Verb has failed.", path);
+			return false;
+		}
+		BOOST_LOG_TRIVIAL(debug) << "Ejecting via InvokeVerb has succeeded.";
+		return true;
+	}();
+
+	if (SUCCEEDED(coinit_hr))
 		CoUninitialize();
-		return false;
-	}
-	BOOST_LOG_TRIVIAL(debug) << "Ejecting via InvokeVerb has succeeded.";
-	VariantClear(&vtEject);
-	CoUninitialize();
-	return true;
+	return success;
 }
 
 } // namespace

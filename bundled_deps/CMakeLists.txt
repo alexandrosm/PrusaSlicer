@@ -1,5 +1,7 @@
 add_subdirectory(admesh)
-add_subdirectory(avrdude)
+if (SLIC3R_GUI)
+    add_subdirectory(avrdude)
+endif()
 add_subdirectory(miniz)
 add_subdirectory(glu-libtess)
 add_subdirectory(agg)

@@ -57,6 +57,7 @@ these documentation pages:
 * [Linux](doc/How%20to%20build%20-%20Linux%20et%20al.md)
 * [macOS](doc/How%20to%20build%20-%20Mac%20OS.md)
 * [Windows](doc/How%20to%20build%20-%20Windows.md)
+* [Fast development builds](doc/Fast-build.md)
 
 ### Can I help?
 

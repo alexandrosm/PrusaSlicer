@@ -45,7 +45,8 @@ The following functions are provided:
     VERSION [<version>]
     MAJOR   [<version>]
     MINOR   [<version>]
-    PATCH   [<version>] )
+    PATCH   [<version>]
+    ABI     [<version>] )
 
   Parse the provided version file to retrieve the current OpenVDB
   version information. The file is expected to be a version.h file
@@ -71,7 +72,7 @@ The following functions are provided:
 
 
 function(OPENVDB_VERSION_FROM_HEADER OPENVDB_VERSION_FILE)
-  cmake_parse_arguments(_VDB "" "VERSION;MAJOR;MINOR;PATCH" "" ${ARGN})
+  cmake_parse_arguments(_VDB "" "VERSION;MAJOR;MINOR;PATCH;ABI" "" ${ARGN})
 
   if(NOT EXISTS ${OPENVDB_VERSION_FILE})
     return()
@@ -97,7 +98,18 @@ function(OPENVDB_VERSION_FROM_HEADER OPENVDB_VERSION_FILE)
   string(REGEX REPLACE "^.*OPENVDB_LIBRARY_PATCH_VERSION_NUMBER[\t ]+([0-9]*).*$" "\\1"
     _OpenVDB_PATCH_VERSION "${openvdb_version_str}"
   )
+
+  # OpenVDB 8.1 and newer records the ABI directly in version.h. Reading it
+  # avoids building and executing the multi-megabyte vdb_print utility just to
+  # configure a consumer.
+  file(STRINGS "${OPENVDB_VERSION_FILE}" openvdb_abi_str
+    REGEX "^#define[\t ]+OPENVDB_ABI_VERSION_NUMBER[\t ]+[0-9]+"
+  )
+  if(openvdb_abi_str MATCHES "OPENVDB_ABI_VERSION_NUMBER[\t ]+([0-9]+)")
+    set(_OpenVDB_ABI_VERSION "${CMAKE_MATCH_1}")
+  endif()
   unset(openvdb_version_str)
+  unset(openvdb_abi_str)
 
   if(_VDB_VERSION)
     set(${_VDB_VERSION}
@@ -113,6 +125,9 @@ function(OPENVDB_VERSION_FROM_HEADER OPENVDB_VERSION_FILE)
   endif()
   if(_VDB_PATCH)
     set(${_VDB_PATCH} ${_OpenVDB_PATCH_VERSION} PARENT_SCOPE)
+  endif()
+  if(_VDB_ABI AND _OpenVDB_ABI_VERSION)
+    set(${_VDB_ABI} ${_OpenVDB_ABI_VERSION} PARENT_SCOPE)
   endif()
 endfunction()
 

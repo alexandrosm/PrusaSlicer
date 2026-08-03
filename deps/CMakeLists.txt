@@ -28,9 +28,14 @@ project(PrusaSlicer_deps)
 
 # Redefine BUILD_SHARED_LIBS with default being OFF
 option(BUILD_SHARED_LIBS "Build shared libraries instead of static (experimental)" OFF)
+option(DEP_WX_GTK3 "Build wxWidgets for GTK3 instead of GTK2 on Linux" OFF)
 
 # List libraries to be excluded from build
 set(${PROJECT_NAME}_PACKAGE_EXCLUDES "" CACHE STRING "Exclude packages matching this regex pattern")
+set(${PROJECT_NAME}_ROOTS "" CACHE STRING
+    "Build only these root packages and their transitive dependencies")
+option(${PROJECT_NAME}_LEAN_BOOST
+    "Skip Boost compiled libraries that are unused by PrusaSlicer runtime targets" OFF)
 
 # Support legacy parameter DESTDIR
 if (DESTDIR)
@@ -44,6 +49,24 @@ endif ()
 
 # Slightly controversial
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/../cmake/modules)
+
+include(CompilerCache)
+slic3r_enable_compiler_cache()
+
+# One cap shared by CMake-based and handwritten ExternalProject recipes.
+# Zero/unset means the detected host count.
+include(ProcessorCount)
+if (DEP_MAX_THREADS)
+  if (NOT DEP_MAX_THREADS MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "DEP_MAX_THREADS must be a positive integer or unset")
+  endif()
+  set(_dep_build_threads ${DEP_MAX_THREADS})
+else ()
+  ProcessorCount(_dep_build_threads)
+  if (NOT _dep_build_threads)
+    set(_dep_build_threads 1)
+  endif()
+endif()
 
 if (MSVC)
   option(DEP_DEBUG "Build in debug version of packages automatically" ON)
@@ -127,6 +150,29 @@ list_projects(FOUND_PACKAGES ${CMAKE_CURRENT_LIST_DIR})
 
 dep_message(STATUS "Found external package definitions: ${FOUND_PACKAGES}")
 
+# Resolve an explicit root set to its transitive closure. This gives lean build
+# profiles a stable allow-list while still pulling every required child package.
+include(${CMAKE_CURRENT_LIST_DIR}/DependencyGraph.cmake)
+set(_selected_packages "")
+if (${PROJECT_NAME}_ROOTS)
+  set(_selected_packages ${${PROJECT_NAME}_ROOTS})
+  foreach (pkg ${_selected_packages})
+    if (NOT pkg IN_LIST FOUND_PACKAGES)
+      message(FATAL_ERROR "Unknown dependency root '${pkg}'")
+    endif()
+  endforeach()
+
+  set(_previous_selection "")
+  while (NOT "${_previous_selection}" STREQUAL "${_selected_packages}")
+    set(_previous_selection "${_selected_packages}")
+    foreach (pkg ${_previous_selection})
+      list(APPEND _selected_packages ${DEP_${pkg}_DEPENDS})
+    endforeach()
+    list(REMOVE_DUPLICATES _selected_packages)
+  endwhile()
+  dep_message(STATUS "Selected dependency closure: ${_selected_packages}")
+endif()
+
 set(${PROJECT_NAME}_PLATFORM_PACKAGES "" CACHE STRING "Select packages which are provided by the platform" )
 set(SYSTEM_PROVIDED_PACKAGES OpenGL)
 
@@ -173,7 +219,26 @@ endfunction()
 set(SUPPORTED_PACKAGES "")
 foreach (pkg ${FOUND_PACKAGES})
     cmake_dependent_option(${PROJECT_NAME}_SELECT_${pkg} "Select package ${pkg} to be built." OFF  "NOT ${PROJECT_NAME}_SELECT_ALL" OFF)
-    if (NOT ${PROJECT_NAME}_PACKAGE_EXCLUDES MATCHES ${pkg} AND (${PROJECT_NAME}_SELECT_ALL OR ${PROJECT_NAME}_SELECT_${pkg}))
+    set(_package_selected FALSE)
+    if (${PROJECT_NAME}_ROOTS AND pkg IN_LIST _selected_packages)
+      set(_package_selected TRUE)
+    elseif (NOT ${PROJECT_NAME}_ROOTS AND (${PROJECT_NAME}_SELECT_ALL OR ${PROJECT_NAME}_SELECT_${pkg}))
+      set(_package_selected TRUE)
+    endif()
+
+    if (_package_selected AND ${PROJECT_NAME}_PACKAGE_EXCLUDES MATCHES ${pkg})
+      if (${PROJECT_NAME}_ROOTS)
+        # An excluded package inside an explicit transitive closure means the
+        # requested closure is incomplete and must not be built silently.
+        message(FATAL_ERROR "Selected dependency '${pkg}' is excluded by ${PROJECT_NAME}_PACKAGE_EXCLUDES")
+      else ()
+        # Preserve the legacy SELECT_ALL / PACKAGE_EXCLUDES behavior used by
+        # the no-occt preset and by the nested MSVC Debug configuration.
+        set(_package_selected FALSE)
+      endif ()
+    endif()
+
+    if (_package_selected)
         include(+${pkg}/${pkg}.cmake)
 
         list(APPEND SUPPORTED_PACKAGES ${pkg})
@@ -248,14 +313,25 @@ if (DEP_DEBUG AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
       -D${PROJECT_NAME}_DEP_DOWNLOAD_DIR=${${PROJECT_NAME}_DEP_DOWNLOAD_DIR}
       -D${PROJECT_NAME}_DEP_INSTALL_PREFIX=${${PROJECT_NAME}_DEP_INSTALL_PREFIX}
       -D${PROJECT_NAME}_PACKAGE_EXCLUDES="${_excl_regexp}"
+      "-D${PROJECT_NAME}_ROOTS=${${PROJECT_NAME}_ROOTS}"
+      -D${PROJECT_NAME}_LEAN_BOOST=${${PROJECT_NAME}_LEAN_BOOST}
       -D${PROJECT_NAME}_SELECT_ALL=${${PROJECT_NAME}_SELECT_ALL}
       -D${PROJECT_NAME}_DEP_BUILD_VERBOSE=${${PROJECT_NAME}_DEP_BUILD_VERBOSE}
+      -DDEP_MAX_THREADS=${DEP_MAX_THREADS}
+      -DSLIC3R_COMPILER_CACHE=${SLIC3R_COMPILER_CACHE}
+      "-DCMAKE_C_COMPILER_LAUNCHER:STRING=${CMAKE_C_COMPILER_LAUNCHER}"
+      "-DCMAKE_CXX_COMPILER_LAUNCHER:STRING=${CMAKE_CXX_COMPILER_LAUNCHER}"
       -DCMAKE_DEBUG_POSTFIX=d
       #TODO: forward per-package selector variables
       -DDEP_MESSAGES_WRITTEN=ON
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/_d 
     OUTPUT_QUIET
+    RESULT_VARIABLE _debug_config_result
   )
+
+  if (NOT _debug_config_result STREQUAL "0")
+    message(FATAL_ERROR "Failed to configure the Debug dependency build (${_debug_config_result})")
+  endif ()
 
   dep_message(STATUS "Building dep targets (Debug): ${_build_list_dbg}")
 

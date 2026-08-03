@@ -121,6 +121,10 @@
 #include <cereal/types/base_class.hpp>
 
 #include <clipper/clipper_z.hpp>
+#ifndef SLIC3R_PCH_STABLE_ONLY
+// Keep these frequently edited first-party headers in the traditional PCH by
+// default. Fast development presets omit them so an ordinary project-header
+// edit does not invalidate the PCH and every translation unit using it.
 #include "libslic3r/clipper.hpp"
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/ClipperUtils.hpp"
@@ -136,5 +140,6 @@
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r_version.h"
+#endif
 
 #include <admesh/stl.h>

@@ -41,8 +41,10 @@ else ()
                              --enable-static=yes \
                              --with-gmp='${${PROJECT_NAME}_DEP_INSTALL_PREFIX}' \
                              ${_gmp_build_tgt}"
-        BUILD_COMMAND make -j
+        BUILD_COMMAND make "-j${_dep_build_threads}"
         INSTALL_COMMAND make install
+        USES_TERMINAL_BUILD TRUE
+        USES_TERMINAL_INSTALL TRUE
     )
 endif ()
 

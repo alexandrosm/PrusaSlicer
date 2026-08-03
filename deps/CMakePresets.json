@@ -52,6 +52,54 @@
             "cacheVariables": {
                 "CMAKE_OSX_ARCHITECTURES": "arm64"
             }
+        },
+        {
+            "name": "fast-base",
+            "hidden": true,
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "DEP_DEBUG": false,
+                "DEP_WX_GTK3": true,
+                "PrusaSlicer_deps_LEAN_BOOST": true,
+                "DEP_DOWNLOAD_DIR": {
+                    "type": "PATH",
+                    "value": "${sourceDir}/.pkg_cache"
+                },
+                "PrusaSlicer_deps_SELECT_ALL": false
+            }
+        },
+        {
+            "name": "fast-gui",
+            "displayName": "Fast GUI dependencies",
+            "description": "Release-only runtime dependency closure without tests or OCCT",
+            "inherits": "fast-base",
+            "binaryDir": "${sourceDir}/build-fast-gui",
+            "cacheVariables": {
+                "PrusaSlicer_deps_ROOTS": "Boost;CGAL;CURL;Cereal;EXPAT;Eigen;GLEW;JPEG;LibBGCode;NLopt;NanoSVG;OpenVDB;PNG;Qhull;TBB;ZLIB;json;wxWidgets;z3"
+            }
+        },
+        {
+            "name": "fast-cli",
+            "displayName": "Lean CLI dependencies",
+            "description": "Release-only transitive closure with GUI, test, and OCCT packages removed",
+            "inherits": "fast-base",
+            "binaryDir": "${sourceDir}/build-fast-cli",
+            "cacheVariables": {
+                "PrusaSlicer_deps_ROOTS": "Boost;CGAL;Cereal;EXPAT;Eigen;JPEG;LibBGCode;NLopt;NanoSVG;OpenVDB;PNG;Qhull;TBB;ZLIB;json;z3"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "fast-gui",
+            "configurePreset": "fast-gui",
+            "targets": ["deps"]
+        },
+        {
+            "name": "fast-cli",
+            "configurePreset": "fast-cli",
+            "targets": ["deps"]
         }
     ]
 }

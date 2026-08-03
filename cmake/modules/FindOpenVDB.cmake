@@ -205,6 +205,7 @@ OPENVDB_VERSION_FROM_HEADER("${OpenVDB_INCLUDE_DIR}/openvdb/version.h"
   MAJOR   OpenVDB_MAJOR_VERSION
   MINOR   OpenVDB_MINOR_VERSION
   PATCH   OpenVDB_PATCH_VERSION
+  ABI     OpenVDB_ABI
 )
 
 # ------------------------------------------------------------------------
@@ -311,13 +312,15 @@ find_package_handle_standard_args(OpenVDB
 #  Determine ABI number
 # ------------------------------------------------------------------------
 
-# Set the ABI number the library was built against. Uses vdb_print
-find_program(OPENVDB_PRINT vdb_print PATHS ${OpenVDB_INCLUDE_DIR} )
-
-OPENVDB_ABI_VERSION_FROM_PRINT(
-  "${OPENVDB_PRINT}"
-  ABI OpenVDB_ABI
-)
+# Older OpenVDB headers did not encode the ABI. Retain the executable fallback
+# only for those versions; current bundled dependencies are header-only here.
+if(NOT OpenVDB_ABI)
+  find_program(OPENVDB_PRINT vdb_print PATHS ${OpenVDB_INCLUDE_DIR} )
+  OPENVDB_ABI_VERSION_FROM_PRINT(
+    "${OPENVDB_PRINT}"
+    ABI OpenVDB_ABI
+  )
+endif()
 
 if(NOT OpenVDB_FIND_QUIETLY)
   if(NOT OpenVDB_ABI)
