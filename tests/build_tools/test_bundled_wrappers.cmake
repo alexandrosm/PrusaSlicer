@@ -1,0 +1,62 @@
+# Hosted configure checks (compiler detection only, no application/dependency build):
+# cmake -DTEST_BINARY_DIR=<fresh-scratch> -DTEST_GENERATOR=Ninja
+#   [-DTEST_MAKE_PROGRAM=<ninja>] -P tests/build_tools/test_bundled_wrappers.cmake
+# Local source-only checks (no compiler enablement or filesystem writes):
+# cmake -DTEST_SOURCE_ONLY=ON -P tests/build_tools/test_bundled_wrappers.cmake
+cmake_minimum_required(VERSION 3.12...3.12)
+get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
+set(_wrappers admesh avrdude glu-libtess imgui miniz libigl)
+set(_language_admesh CXX)
+set(_language_avrdude "C CXX")
+set(_language_glu-libtess C)
+set(_language_imgui CXX)
+set(_language_miniz C)
+set(_language_libigl NONE)
+foreach(_wrapper IN LISTS _wrappers)
+  set(_file "${_repo}/bundled_deps/${_wrapper}/CMakeLists.txt")
+  file(READ "${_file}" _source)
+  string(FIND "${_source}" "cmake_minimum_required(VERSION 3.12...3.12)" _policy)
+  string(FIND "${_source}" "project(${_wrapper} LANGUAGES ${_language_${_wrapper}})" _languages)
+  if(_policy LESS 0 OR _languages LESS 0)
+    message(FATAL_ERROR "${_wrapper}: expected reviewed policy range and explicit source languages")
+  endif()
+endforeach()
+file(READ "${_repo}/bundled_deps/imgui/CMakeLists.txt" _imgui)
+if(NOT _imgui MATCHES "imgui/imgui_demo[.]cpp" OR _imgui MATCHES "IMGUI_DISABLE_DEMO_WINDOWS")
+  message(FATAL_ERROR "ImGui demo functionality must remain available")
+endif()
+message(STATUS "PASS: six bundled wrapper policy/language source contracts")
+if(TEST_SOURCE_ONLY)
+  return()
+endif()
+
+if(NOT TEST_BINARY_DIR)
+  message(FATAL_ERROR "Set TEST_BINARY_DIR to a new disposable configure directory")
+endif()
+get_filename_component(TEST_BINARY_DIR "${TEST_BINARY_DIR}" ABSOLUTE)
+if(EXISTS "${TEST_BINARY_DIR}")
+  message(FATAL_ERROR "Refusing to reuse or overwrite an existing fixture directory: ${TEST_BINARY_DIR}")
+endif()
+set(_generator_args)
+if(TEST_GENERATOR)
+  list(APPEND _generator_args -G "${TEST_GENERATOR}")
+endif()
+if(TEST_MAKE_PROGRAM)
+  list(APPEND _generator_args "-DCMAKE_MAKE_PROGRAM=${TEST_MAKE_PROGRAM}")
+endif()
+
+foreach(_provider IN ITEMS bundled system)
+  execute_process(COMMAND "${CMAKE_COMMAND}" -S "${CMAKE_CURRENT_LIST_DIR}/bundled_wrappers"
+    -B "${TEST_BINARY_DIR}/${_provider}" ${_generator_args}
+    "-DFIXTURE_LIBIGL_PROVIDER=${_provider}" -Werror=dev
+    RESULT_VARIABLE _result OUTPUT_VARIABLE _output ERROR_VARIABLE _error)
+  file(WRITE "${TEST_BINARY_DIR}/${_provider}.log" "${_output}\n${_error}")
+  if(NOT _result EQUAL 0)
+    message(FATAL_ERROR "${_provider}: standalone bundled wrapper configure failed\n${_output}\n${_error}")
+  endif()
+  if(NOT EXISTS "${TEST_BINARY_DIR}/${_provider}/fixture-passed.txt")
+    message(FATAL_ERROR "${_provider}: configure omitted its success contract marker")
+  endif()
+  message(STATUS "PASS: bundled wrappers configured with ${_provider} libigl")
+endforeach()

@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 2.8.12)
-project(imgui)
+# Match the application's supported floor; keep policies at that reviewed level.
+cmake_minimum_required(VERSION 3.12...3.12)
+project(imgui LANGUAGES CXX)
 
 add_library(imgui STATIC
     imgui/imconfig.h

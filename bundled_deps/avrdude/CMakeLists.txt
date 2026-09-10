@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.0)
+# Match the application's supported floor; keep policies at that reviewed level.
+cmake_minimum_required(VERSION 3.12...3.12)
+project(avrdude LANGUAGES C CXX)
 
 add_definitions(-D_BSD_SOURCE -D_DEFAULT_SOURCE)   # To enable various useful macros and functions on Unices
 remove_definitions(-D_UNICODE -DUNICODE)

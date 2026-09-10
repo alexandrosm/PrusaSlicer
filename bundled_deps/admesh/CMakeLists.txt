@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 2.8.12)
-project(admesh)
+# Match the application's supported floor; keep policies at that reviewed level.
+cmake_minimum_required(VERSION 3.12...3.12)
+project(admesh LANGUAGES CXX)
 
 add_library(admesh STATIC
     admesh/connect.cpp

@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 3.0)
-project(libigl)
+# Header-only: no compiler enablement is needed by this wrapper.
+cmake_minimum_required(VERSION 3.12...3.12)
+project(libigl LANGUAGES NONE)
 
 add_library(libigl INTERFACE)
 
