@@ -89,7 +89,9 @@ bin2h(
 add_library(avrdude STATIC ${AVRDUDE_SOURCES})
 target_link_libraries(avrdude PRIVATE localesutils)
 
-add_executable(avrdude-slic3r avrdude/main-standalone.cpp)
+# Firmware flashing links the avrdude library directly. Keep the standalone
+# diagnostic executable available as an explicit target, outside normal builds.
+add_executable(avrdude-slic3r EXCLUDE_FROM_ALL avrdude/main-standalone.cpp)
 target_link_libraries(avrdude-slic3r avrdude)
 
 encoding_check(avrdude)

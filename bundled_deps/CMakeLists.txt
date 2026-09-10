@@ -6,7 +6,9 @@ add_subdirectory(miniz)
 add_subdirectory(glu-libtess)
 add_subdirectory(agg)
 add_subdirectory(libigl)
-add_subdirectory(hints)
+# Translation generation remains available as an explicit target, but should
+# not be part of a normal application build or dependency schedule.
+add_subdirectory(hints EXCLUDE_FROM_ALL)
 add_subdirectory(libnest2d)
 
 add_library(semver STATIC

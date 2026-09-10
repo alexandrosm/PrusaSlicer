@@ -185,6 +185,7 @@ if (WIN32)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -municode")
     endif()
 
+    if (SLIC3R_GUI)
     add_executable(PrusaSlicer_app_gui WIN32 PrusaSlicer_app_msvc.cpp ${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicer.rc)
     # Generate debug symbols even in release mode.
     if(MSVC AND SLIC3R_MSVC_DEBUG_SYMBOLS)
@@ -194,6 +195,7 @@ if (WIN32)
     add_dependencies(PrusaSlicer_app_gui PrusaSlicer)
     set_target_properties(PrusaSlicer_app_gui PROPERTIES OUTPUT_NAME "prusa-slicer")
     target_link_libraries(PrusaSlicer_app_gui PRIVATE boost_headeronly)
+    endif()
 
     add_executable(PrusaSlicer_app_console PrusaSlicer_app_msvc.cpp ${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicer.rc)
     # Generate debug symbols even in release mode.
@@ -205,6 +207,7 @@ if (WIN32)
     set_target_properties(PrusaSlicer_app_console PROPERTIES OUTPUT_NAME "prusa-slicer-console")
     target_link_libraries(PrusaSlicer_app_console PRIVATE boost_headeronly)
 
+    if (SLIC3R_GUI)
     add_executable(PrusaSlicer_app_gcodeviewer WIN32 PrusaSlicer_app_msvc.cpp ${CMAKE_CURRENT_BINARY_DIR}/PrusaSlicer-gcodeviewer.rc)
     # Generate debug symbols even in release mode.
     if (MSVC AND SLIC3R_MSVC_DEBUG_SYMBOLS)
@@ -214,6 +217,7 @@ if (WIN32)
     add_dependencies(PrusaSlicer_app_gcodeviewer PrusaSlicer)
     set_target_properties(PrusaSlicer_app_gcodeviewer PROPERTIES OUTPUT_NAME "prusa-gcodeviewer")
     target_link_libraries(PrusaSlicer_app_gcodeviewer PRIVATE boost_headeronly)
+    endif()
 endif ()
 
 # Link the resources dir to where Slic3r GUI expects it
@@ -284,9 +288,11 @@ if (WIN32)
     endif ()
     # The fast build presets intentionally build one wrapper target instead of
     # ALL_BUILD. Keep the runtime DLL staging step in that target-specific path.
-    add_dependencies(PrusaSlicer_app_gui PrusaSlicerDllsCopy)
     add_dependencies(PrusaSlicer_app_console PrusaSlicerDllsCopy)
-    add_dependencies(PrusaSlicer_app_gcodeviewer PrusaSlicerDllsCopy)
+    if (SLIC3R_GUI)
+        add_dependencies(PrusaSlicer_app_gui PrusaSlicerDllsCopy)
+        add_dependencies(PrusaSlicer_app_gcodeviewer PrusaSlicerDllsCopy)
+    endif()
 
 else ()
     if (APPLE)
@@ -334,7 +340,9 @@ add_custom_target(PrusaSlicer_fast DEPENDS ${_prusaslicer_fast_target})
 if (WIN32)
     install(TARGETS PrusaSlicer RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}")
     if (MSVC)
-        install(TARGETS PrusaSlicer_app_gui RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}")
+        if (SLIC3R_GUI)
+            install(TARGETS PrusaSlicer_app_gui RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}")
+        endif()
         install(TARGETS PrusaSlicer_app_console RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}")
     endif ()
 else ()

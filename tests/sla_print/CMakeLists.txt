@@ -24,11 +24,3 @@ endif()
 
 # catch_discover_tests(${_TEST_NAME}_tests TEST_PREFIX "${_TEST_NAME}: ")
 add_test(${_TEST_NAME}_tests ${_TEST_NAME}_tests ${CATCH_EXTRA_ARGS})
-
-if (WIN32)
-    # Adds a post-build copy of libgmp-10.dll
-    add_custom_command(TARGET ${_TEST_NAME}_tests POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          "${CMAKE_PREFIX_PATH}/bin/libgmp-10.dll"
-          $<TARGET_FILE_DIR:${_TEST_NAME}_tests>)
-endif()
