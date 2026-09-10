@@ -72,6 +72,17 @@ function Assert-FastPathWithin {
     if (-not $fullPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing cache operation outside '$fullRoot': $fullPath"
     }
+    # Lexical containment is insufficient on Windows: reject junctions/symlinks
+    # at every existing ancestor before copying, moving or deleting cache files.
+    $cursor = $fullPath
+    while ($cursor -and $cursor.Length -ge $fullRoot.Length) {
+        if (Test-Path -LiteralPath $cursor) {
+            if ((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "Refusing cache operation through a reparse point: $cursor"
+            }
+        }
+        $cursor = Split-Path -Parent $cursor
+    }
 }
 
 function Remove-FastTemporaryDirectory {
@@ -220,14 +231,18 @@ function Get-FastToolRecord {
 function Get-FastDependencyRecipeFiles {
     param(
         [Parameter(Mandatory)] [string] $SourceDirectory,
-        [Parameter(Mandatory)] [string] $DependencyDirectory
+        [Parameter(Mandatory)] [string] $DependencyDirectory,
+        [string[]] $Packages = @(),
+        [switch] $CommonOnly
     )
 
     $filesByPath = @{}
     $explicitFiles = @(
         (Join-Path $DependencyDirectory 'CMakeLists.txt'),
-        (Join-Path $DependencyDirectory 'CMakePresets.json'),
-        (Join-Path $DependencyDirectory 'DependencyGraph.cmake')
+        (Join-Path $DependencyDirectory 'PackageCache.cmake'),
+        (Join-Path $SourceDirectory 'build_fast_cache.ps1'),
+        (Join-Path $SourceDirectory 'build_fast_package_cache.ps1'),
+        (Join-Path $SourceDirectory 'build_fast_prune_policy.ps1')
     )
     foreach ($path in $explicitFiles) {
         $item = Get-Item -LiteralPath $path
@@ -235,6 +250,7 @@ function Get-FastDependencyRecipeFiles {
     }
 
     foreach ($packageDirectory in Get-ChildItem -LiteralPath $DependencyDirectory -Directory -Filter '+*') {
+        if ($CommonOnly -or $packageDirectory.Name.Substring(1) -notin $Packages) { continue }
         foreach ($item in Get-ChildItem -LiteralPath $packageDirectory.FullName -Recurse -File -Force) {
             $filesByPath[$item.FullName.ToLowerInvariant()] = $item
         }
@@ -277,6 +293,13 @@ function New-FastDependencyCacheContext {
     )
 
     $cmakeCache = Read-FastCMakeCache -Path (Join-Path $DependencyBuildDirectory 'CMakeCache.txt')
+    if (-not [string]::IsNullOrEmpty([string] $cmakeCache['LibBGCode_SOURCE_DIR'])) {
+        # This recipe deliberately uses BUILD_ALWAYS for editable local sources.
+        # Neither a pinned whole-prefix hit nor a package hit may replace it.
+        # The wrapper catches this refusal and runs normal dependency targets;
+        # no context exists afterward that could publish local binaries either.
+        throw 'Dependency caches disabled: LibBGCode_SOURCE_DIR requires its normal always-build local-source workflow'
+    }
     $expectedPrefix = Join-Path $DependencyBuildDirectory 'destdir\usr\local'
     $configuredPrefix = $cmakeCache['PrusaSlicer_deps_DEP_INSTALL_PREFIX']
     if (-not $configuredPrefix) {
@@ -302,6 +325,8 @@ function New-FastDependencyCacheContext {
         'CMAKE_MODULE_LINKER_FLAGS',
         'CMAKE_MODULE_LINKER_FLAGS_RELEASE',
         'CMAKE_MSVC_RUNTIME_LIBRARY',
+        'CMAKE_MSVC_DEBUG_INFORMATION_FORMAT',
+        'CMAKE_POLICY_DEFAULT_CMP0141',
         'CMAKE_RC_FLAGS',
         'CMAKE_RC_FLAGS_RELEASE',
         'CMAKE_SHARED_LINKER_FLAGS',
@@ -326,6 +351,7 @@ function New-FastDependencyCacheContext {
         'PrusaSlicer_deps_DEP_DOWNLOAD_DIR',
         'PrusaSlicer_deps_DEP_INSTALL_PREFIX',
         'PrusaSlicer_deps_DEP_BUILD_VERBOSE'
+        'PrusaSlicer_deps_CACHE_SELECTION'
     )
 
     $effectiveValues = @{}
@@ -355,7 +381,10 @@ function New-FastDependencyCacheContext {
         $orderedEffectiveValues[$name] = $effectiveValues[$name]
     }
 
-    $recipeFiles = Get-FastDependencyRecipeFiles -SourceDirectory $SourceDirectory -DependencyDirectory $DependencyDirectory
+    $selection = Get-Content -LiteralPath (Join-Path $DependencyBuildDirectory 'dependency-selection.json') -Raw | ConvertFrom-Json
+    if ([int] $selection.schema -ne 1) { throw 'Unknown dependency selection schema' }
+    $selectedPackages = @($selection.packages | ForEach-Object { [string] $_.name })
+    $recipeFiles = Get-FastDependencyRecipeFiles -SourceDirectory $SourceDirectory -DependencyDirectory $DependencyDirectory -Packages $selectedPackages
     $recipeMetadata = Get-FastFileSetMetadata -Root $SourceDirectory -Files $recipeFiles
 
     $cmakeVersion = Get-FastCommandVersion -Path $CMake -Arguments @('--version')
@@ -431,7 +460,7 @@ function New-FastDependencyCacheContext {
         platform                 = 'windows'
         hostArchitecture         = 'x64'
         targetArchitecture       = 'x64'
-        prefixPolicy             = 'lean-v1'
+        prefixPolicy             = 'lean-v2-shared-path-policy'
         profile                  = $Profile
         preset                   = $Preset
         sourceDirectory          = ConvertTo-FastNormalizedPath -Path $SourceDirectory
@@ -446,13 +475,14 @@ function New-FastDependencyCacheContext {
             fileCount  = $recipeMetadata.FileCount
             totalBytes = $recipeMetadata.TotalBytes
         }
+        selectedGraph             = @($selection.packages)
         tools                     = $tools
     }
     $inputJson = ConvertTo-FastCanonicalJson -Value $input
     $fingerprint = Get-FastTextSha256 -Text $inputJson
     $cacheRoot = Join-Path $DependencyDirectory '.compiled_cache\v1'
 
-    return [pscustomobject]@{
+    $context = [pscustomobject]@{
         Schema                   = 1
         Profile                  = $Profile
         Preset                   = $Preset
@@ -464,7 +494,12 @@ function New-FastDependencyCacheContext {
         InstallPrefix            = [IO.Path]::GetFullPath($expectedPrefix)
         CanonicalInstallPrefix   = ConvertTo-FastNormalizedPath -Path $expectedPrefix
         PrefixMarker             = Join-Path $DependencyBuildDirectory '.fast-dependency-cache.json'
+        PackageSelectionPath     = Join-Path $DependencyBuildDirectory '.fast-package-selection.json'
+        PackageContexts          = @{}
     }
+    $context.PackageContexts = New-FastPackageContexts -Context $context -BuildInput $input -Selection $selection `
+        -SourceDirectory $SourceDirectory -DependencyDirectory $DependencyDirectory
+    return $context
 }
 
 function Assert-FastDependencyPrefix {
@@ -483,7 +518,7 @@ function Assert-FastDependencyPrefix {
         -not (Get-ChildItem -LiteralPath $libraryDirectory -Recurse -File -Filter '*.lib' -ErrorAction SilentlyContinue | Select-Object -First 1)) {
         throw 'Cached dependency prefix contains no static/import libraries'
     }
-    if ($Profile -eq 'gui') {
+    if ($Profile -in @('gui', 'lean-release')) {
         $wxHeader = Get-ChildItem -LiteralPath (Join-Path $Prefix 'include') `
             -Recurse -File -Filter 'wx.h' -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match '[\\/]wx[\\/]wx\.h$' } |
@@ -508,87 +543,18 @@ function Optimize-FastDependencyPrefix {
     }
     Assert-FastPathWithin -Path $Prefix -Root $AllowedRoot
 
-    # None of these developer-prefix artifacts are consumed by PrusaSlicer.
-    # Several are also stale when an existing prefix is incrementally rebuilt
-    # after disabling TurboJPEG and vdb_print in their source projects.
-    $relativeFiles = @(
-        'bin\cjpeg.exe',
-        'bin\djpeg.exe',
-        'bin\jpegtran.exe',
-        'bin\rdjpgcom.exe',
-        'bin\wrjpgcom.exe',
-        'bin\tjbench.exe',
-        'bin\vdb_print.exe',
-        'include\turbojpeg.h',
-        'lib\turbojpeg-static.lib',
-        'lib\pkgconfig\libturbojpeg.pc',
-        'include\boost-1_83\boost\json.hpp',
-        'include\boost-1_83\boost\program_options.hpp',
-        'include\boost-1_83\boost\progress.hpp',
-        'include\boost-1_83\boost\timer.hpp',
-        'include\boost-1_83\boost\url.hpp',
-        'share\man\man1\cjpeg.1',
-        'share\man\man1\djpeg.1',
-        'share\man\man1\jpegtran.1',
-        'share\man\man1\rdjpgcom.1',
-        'share\man\man1\wrjpgcom.1'
-    )
-
+    # The same fingerprinted predicate is used by package-manifest ownership.
+    # Only these explicitly known SDK artifacts may be absent after installation.
     [long] $removedBytes = 0
     [int] $removedFiles = 0
-    foreach ($relativePath in $relativeFiles) {
-        $path = Join-Path $Prefix $relativePath
-        Assert-FastPathWithin -Path $path -Root $AllowedRoot
-        if (Test-Path -LiteralPath $path -PathType Leaf) {
-            $removedBytes += (Get-Item -LiteralPath $path).Length
-            Remove-Item -LiteralPath $path -Force
+    foreach ($file in Get-ChildItem -LiteralPath $Prefix -Recurse -File -Force) {
+        $relative = Get-FastRelativePath -Root $Prefix -Path $file.FullName
+        if (Test-FastPrunedDependencyPath $relative) {
+            Assert-FastPathWithin -Path $file.FullName -Root $AllowedRoot
+            $removedBytes += $file.Length
+            Remove-Item -LiteralPath $file.FullName -Force
             ++$removedFiles
         }
-    }
-
-    $leanBoostComponents = @('json', 'poly_collection', 'program_options', 'timer', 'type_erasure', 'url')
-    $boostLibraryDirectory = Join-Path $Prefix 'lib'
-    foreach ($component in $leanBoostComponents) {
-        foreach ($library in Get-ChildItem -LiteralPath $boostLibraryDirectory -File `
-                -Filter "libboost_${component}-*.lib" -ErrorAction SilentlyContinue) {
-            Assert-FastPathWithin -Path $library.FullName -Root $AllowedRoot
-            $removedBytes += $library.Length
-            Remove-Item -LiteralPath $library.FullName -Force
-            ++$removedFiles
-        }
-    }
-
-    $relativeDirectories = @(
-        $leanBoostComponents | ForEach-Object { "lib\cmake\boost_${_}-1.83.0" }
-        $leanBoostComponents | ForEach-Object { "include\boost-1_83\boost\${_}" }
-    )
-    foreach ($relativePath in $relativeDirectories) {
-        $path = Join-Path $Prefix $relativePath
-        if (Test-Path -LiteralPath $path -PathType Container) {
-            Assert-FastPathWithin -Path $path -Root $AllowedRoot
-            $files = @(Get-ChildItem -LiteralPath $path -Recurse -File -Force)
-            $removedBytes += ($files | Measure-Object Length -Sum).Sum
-            $removedFiles += $files.Count
-            Remove-Item -LiteralPath $path -Recurse -Force
-        }
-    }
-
-    # Keep the package license but omit installed end-user/tool documentation
-    # from this private build SDK.
-    $jpegDocs = Join-Path $Prefix 'share\doc\libjpeg-turbo'
-    if (Test-Path -LiteralPath $jpegDocs -PathType Container) {
-        Assert-FastPathWithin -Path $jpegDocs -Root $AllowedRoot
-        foreach ($file in Get-ChildItem -LiteralPath $jpegDocs -Recurse -File -Force) {
-            if ($file.Name -ne 'LICENSE.md') {
-                $removedBytes += $file.Length
-                Remove-Item -LiteralPath $file.FullName -Force
-                ++$removedFiles
-            }
-        }
-        Get-ChildItem -LiteralPath $jpegDocs -Recurse -Directory -Force |
-            Sort-Object FullName -Descending |
-            Where-Object { @(Get-ChildItem -LiteralPath $_.FullName -Force).Count -eq 0 } |
-            Remove-Item -Force
     }
 
     if ($removedFiles -gt 0) {
@@ -785,6 +751,9 @@ function Restore-FastDependencyCache {
 
     if (-not $manifest) {
         Write-Host "[fast-build] Compiled dependency cache miss ($($Context.Fingerprint.Substring(0, 12)))."
+        if ($Context.PSObject.Properties['PackageContexts'] -and $Context.PackageContexts.Count -gt 0) {
+            if (Restore-FastPackageArtifacts -Context $Context) { return 'partial' }
+        }
         return 'miss'
     }
 
@@ -847,6 +816,9 @@ function Publish-FastDependencyCache {
     )
 
     Assert-FastDependencyPrefix -Prefix $Context.InstallPrefix -Profile $Context.Profile
+    if ($Context.PSObject.Properties['PackageContexts'] -and $Context.PackageContexts.Count -gt 0) {
+        Publish-FastPackageArtifacts -Context $Context
+    }
     $tree = Get-FastDirectoryMetadata -Root $Context.InstallPrefix
     New-Item -ItemType Directory -Path $Context.CacheRoot -Force | Out-Null
     if (Test-Path -LiteralPath $Context.CacheEntryDirectory -PathType Container) {
@@ -926,3 +898,6 @@ function Publish-FastDependencyCache {
         }
     }
 }
+
+. (Join-Path $PSScriptRoot 'build_fast_prune_policy.ps1')
+. (Join-Path $PSScriptRoot 'build_fast_package_cache.ps1')

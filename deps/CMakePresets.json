@@ -60,6 +60,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "DEP_DEBUG": false,
+                "DEP_MAX_THREADS": "2",
                 "DEP_WX_GTK3": true,
                 "PrusaSlicer_deps_LEAN_BOOST": true,
                 "DEP_DOWNLOAD_DIR": {
@@ -80,6 +81,16 @@
             }
         },
         {
+            "name": "lean-release",
+            "displayName": "Full-feature Release dependencies",
+            "description": "Release-only dependency closure including GUI, STEP and tests",
+            "inherits": "fast-base",
+            "binaryDir": "${sourceDir}/build-lean-release",
+            "cacheVariables": {
+                "PrusaSlicer_deps_ROOTS": "Boost;CGAL;CURL;Catch2;Cereal;EXPAT;Eigen;GLEW;JPEG;LibBGCode;NLopt;NanoSVG;OCCT;OpenVDB;PNG;Qhull;TBB;ZLIB;json;wxWidgets;z3"
+            }
+        },
+        {
             "name": "fast-cli",
             "displayName": "Lean CLI dependencies",
             "description": "Release-only transitive closure with GUI, test, and OCCT packages removed",
@@ -94,11 +105,22 @@
         {
             "name": "fast-gui",
             "configurePreset": "fast-gui",
+            "jobs": 2,
+            "environment": {"CMAKE_BUILD_PARALLEL_LEVEL": "2"},
             "targets": ["deps"]
         },
         {
             "name": "fast-cli",
             "configurePreset": "fast-cli",
+            "jobs": 2,
+            "environment": {"CMAKE_BUILD_PARALLEL_LEVEL": "2"},
+            "targets": ["deps"]
+        },
+        {
+            "name": "lean-release",
+            "configurePreset": "lean-release",
+            "jobs": 2,
+            "environment": {"CMAKE_BUILD_PARALLEL_LEVEL": "2"},
             "targets": ["deps"]
         }
     ]

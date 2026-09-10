@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.19)
+project(FakeInstalledPackage NONE)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/lib${PACKAGE_NAME}.lib" "fixture library ${PACKAGE_NAME}\n")
+add_custom_target(record_build ALL COMMAND "${CMAKE_COMMAND}" -E touch "${BUILD_MARKER}/${PACKAGE_NAME}.built")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/lib${PACKAGE_NAME}.lib" DESTINATION lib)
+if(PACKAGE_NAME STREQUAL "C")
+  # Exercise real install-manifest ownership after intentional SDK pruning.
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/cjpeg.exe" "unused fixture CLI\n")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/README.md" "unused fixture docs\n")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.md" "retained fixture license\n")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/unused.hpp" "unused fixture Boost header\n")
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/cjpeg.exe" DESTINATION bin)
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/README.md" "${CMAKE_CURRENT_BINARY_DIR}/LICENSE.md"
+    DESTINATION share/doc/libjpeg-turbo)
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/unused.hpp" DESTINATION include/boost-1_83/boost/json)
+endif()

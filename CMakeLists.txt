@@ -9,6 +9,11 @@
 #/|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 #/|/
 cmake_minimum_required(VERSION 3.13)
+# This policy must precede the first project()/language enable. It allows
+# embedded MSVC debug information with sccache without losing linker PDBs.
+if (POLICY CMP0141)
+    cmake_policy(SET CMP0141 NEW)
+endif()
 project(PrusaSlicer)
 
 include("version.inc")
@@ -57,6 +62,7 @@ endif()
 
 include("${PROJECT_SOURCE_DIR}/cmake/modules/CompilerCache.cmake")
 slic3r_enable_compiler_cache()
+slic3r_configure_msvc_debug_information()
 
 # SLIC3R_OPENGL_ES can be enabled only if SLIC3R_GUI is enabled.
 CMAKE_DEPENDENT_OPTION(SLIC3R_OPENGL_ES "Compile PrusaSlicer targeting OpenGL ES" OFF "SLIC3R_GUI" OFF)
@@ -152,8 +158,10 @@ if (MSVC)
     add_compile_options(-bigobj -Zm520)
     # Release symbols are useful for distributable builds but add substantial
     # compile, link, and disk overhead to fast local builds.
-    if (SLIC3R_MSVC_DEBUG_SYMBOLS)
-        add_compile_options(/Zi)
+    if (SLIC3R_MSVC_DEBUG_SYMBOLS AND NOT SLIC3R_MSVC_DEBUG_FORMAT_MANAGED)
+        # Compatibility path for CMake older than 3.25. The helper selects /Z7
+        # for sccache and /Zi otherwise; both retain full symbolic information.
+        add_compile_options(${SLIC3R_MSVC_DEBUG_FLAG})
     endif()
     # /DEBUG changes link.exe's defaults to /OPT:NOREF and /OPT:NOICF. Release
     # packages keep PDBs, so restore the normal Release elimination explicitly

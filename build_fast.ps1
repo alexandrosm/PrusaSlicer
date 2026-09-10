@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("gui", "cli")]
+    [ValidateSet("gui", "cli", "lean-release")]
     [string] $Profile = "gui",
 
     [ValidateSet("all", "deps", "configure", "app")]
@@ -8,6 +8,14 @@ param(
 
     [ValidateRange(0, 512)]
     [int] $Jobs = 0,
+
+    [ValidateRange(0.1, 1048576)] [double] $MemoryGiB = 6,
+    [ValidateRange(0.1, 1048576)] [double] $MinimumFreeGiB = 6,
+    [ValidateRange(0.1, 1048576)] [double] $MinimumCommitGiB = 6,
+    [ValidateRange(1, 512)] [int] $CpuCount = 2,
+    [ValidateRange(0, 1048576)] [int] $LinkWorkingSetMiB = 0,
+    [string] $Python = "",
+    [string] $CompilerCache = 'auto',
 
     [switch] $Clean,
     [switch] $NoUnity,
@@ -19,7 +27,8 @@ $ErrorActionPreference = "Stop"
 
 $sourceDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $sourceDirectory "build_fast_cache.ps1")
-$preset = "fast-$Profile"
+. (Join-Path $sourceDirectory "build_fast_resources.ps1")
+$preset = if ($Profile -eq 'lean-release') { 'lean-release' } else { "fast-$Profile" }
 $dependencyDirectory = Join-Path $sourceDirectory "deps"
 $dependencyBuildDirectory = Join-Path $dependencyDirectory "build-$preset"
 $applicationBuildDirectory = Join-Path $sourceDirectory "build-$preset"
@@ -44,6 +53,40 @@ function Find-Executable {
 
     return $null
 }
+
+$pythonExecutable = if ($Python) { Find-Executable -Name $Python } else { Find-Executable -Name 'python' }
+if (-not $pythonExecutable) {
+    throw 'Python with psutil is required for resource-guarded builds. Supply -Python with its executable path.'
+}
+$cacheExecutable = $null
+if ($CompilerCache -eq 'auto') {
+    $cacheExecutable = Find-Executable -Name 'sccache'
+    if (-not $cacheExecutable) { $cacheExecutable = Find-Executable -Name 'ccache' }
+}
+elseif ($CompilerCache -notin @('off', 'none', '')) {
+    $cacheExecutable = Find-Executable -Name $CompilerCache
+    if (-not $cacheExecutable) { throw "Requested compiler cache was not found: $CompilerCache" }
+}
+if ($cacheExecutable -and [IO.Path]::GetFileNameWithoutExtension($cacheExecutable) -notin @('sccache', 'ccache')) {
+    throw 'The guarded wrapper supports only known sccache/ccache launchers; an arbitrary launcher could escape process-tree protection.'
+}
+$cacheMode = if ($cacheExecutable) { $cacheExecutable } else { 'off' }
+# Clear stale/custom launchers before our known launcher is selected by CMake.
+$cacheConfigureArguments = @("-DSLIC3R_COMPILER_CACHE=$cacheMode", '-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=')
+$privateSccache = $cacheExecutable -and [IO.Path]::GetFileNameWithoutExtension($cacheExecutable) -eq 'sccache'
+$hostMemory = Get-FastHostMemory
+if (-not $isWindowsHost) {
+    # PowerShell's native memory helper is Windows-only. Use the same psutil
+    # provider as the guard on other native hosts; never start WSL to query it.
+    $memoryJson = & $pythonExecutable -c 'import json,psutil; m=psutil.virtual_memory(); print(json.dumps(dict(TotalBytes=m.total, AvailableBytes=m.available)))'
+    if ($LASTEXITCODE -ne 0) { throw 'Python/psutil physical-memory preflight failed.' }
+    $hostMemory = $memoryJson | ConvertFrom-Json
+}
+$buildJobs = Resolve-FastBuildJobs -Jobs $Jobs -TotalMemoryBytes $hostMemory.TotalBytes `
+    -AvailableMemoryBytes $hostMemory.AvailableBytes `
+    -MinimumFreeMemoryBytes ([long] ($MinimumFreeGiB * 1GB)) -BuildMemoryBytes ([long] ($MemoryGiB * 1GB))
+Write-Host "[fast-build] Using $buildJobs jobs; guard: $MemoryGiB GiB tree RSS, $MinimumFreeGiB GiB free RAM, $CpuCount CPUs."
+if ($isWindowsHost) { Write-Host "[fast-build] Windows commit reserve: $MinimumCommitGiB GiB; private PDB service and below-normal priority." }
 
 function Remove-BuildDirectory {
     param([Parameter(Mandatory)] [string] $Path)
@@ -109,27 +152,49 @@ function Invoke-CMake {
 
     Write-Host "[fast-build] $Label"
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $previousParallelLevel = [Environment]::GetEnvironmentVariable('CMAKE_BUILD_PARALLEL_LEVEL')
     Push-Location -LiteralPath $WorkingDirectory
     try {
+        # Also bound install steps and other nested cmake --build commands that
+        # do not carry an explicit job count. Restore the caller's setting below.
+        $env:CMAKE_BUILD_PARALLEL_LEVEL = [string] $buildJobs
+        $guardLabel = $preset + '-' + [Guid]::NewGuid().ToString('N')
+        $guardDirectory = Join-Path $sourceDirectory 'out/build-guard'
         if ($isWindowsHost) {
-            foreach ($argument in $ArgumentList) {
-                if ($argument.Contains('"')) {
-                    throw "A CMake argument contains an unsupported quote: $argument"
-                }
-            }
-            $quotedArguments = ($ArgumentList | ForEach-Object { '"' + $_ + '"' }) -join " "
-            $commandLine = "call `"$vsDevCmd`" -no_logo -arch=x64 -host_arch=x64 >nul && `"$cmake`" $quotedArguments"
-            & $env:ComSpec /d /c $commandLine
+            [IO.Directory]::CreateDirectory($guardDirectory) | Out-Null
+            $commandFile = Join-Path $guardDirectory ($guardLabel + '.cmd')
+            New-FastWindowsCommandFile -Path $commandFile -VsDevCmd $vsDevCmd -Executable $cmake -ArgumentList $ArgumentList
+            $childArguments = @($env:ComSpec, '/d', '/c', $commandFile)
         }
         else {
-            & $cmake @ArgumentList
+            $childArguments = @($cmake) + $ArgumentList
         }
+        if ($privateSccache) {
+            $childArguments = @($pythonExecutable, '-B', (Join-Path $sourceDirectory 'tools/sccache_supervisor.py'),
+                '--sccache', $cacheExecutable, '--session-dir', (Join-Path $guardDirectory ($guardLabel + '.sccache')),
+                '--cache-dir', (Join-Path $sourceDirectory 'out/compiler-cache/sccache'), '--') + $childArguments
+        }
+
+        $guardArguments = @('-B', (Join-Path $sourceDirectory 'tools/run_guarded.py'),
+            '--log-dir', $guardDirectory,
+            '--label', $guardLabel,
+            '--memory-gib', $MemoryGiB.ToString([Globalization.CultureInfo]::InvariantCulture),
+            '--minimum-free-gib', $MinimumFreeGiB.ToString([Globalization.CultureInfo]::InvariantCulture),
+            '--launch-headroom-gib', ([Math]::Min(2, $MemoryGiB)).ToString([Globalization.CultureInfo]::InvariantCulture),
+            '--cpu-count', [string] $CpuCount)
+        if ($isWindowsHost) {
+            $guardArguments += @('--minimum-commit-gib', $MinimumCommitGiB.ToString([Globalization.CultureInfo]::InvariantCulture))
+            if ($LinkWorkingSetMiB -gt 0) { $guardArguments += @('--link-working-set-mib', [string] $LinkWorkingSetMiB) }
+        }
+        elseif ($LinkWorkingSetMiB -gt 0) { throw '-LinkWorkingSetMiB is Windows-only.' }
+        & $pythonExecutable @guardArguments -- @childArguments
 
         if ($LASTEXITCODE -ne 0) {
             throw "$Label failed with exit code $LASTEXITCODE"
         }
     }
     finally {
+        [Environment]::SetEnvironmentVariable('CMAKE_BUILD_PARALLEL_LEVEL', $previousParallelLevel)
         Pop-Location
         $stopwatch.Stop()
         Write-Host ("[fast-build] {0}: {1:c}" -f $Label, $stopwatch.Elapsed)
@@ -146,14 +211,7 @@ if ($Clean) {
 }
 
 if ($Step -in @("all", "deps")) {
-    $dependencyConfigureArguments = @("--preset", $preset, "-DCMAKE_MAKE_PROGRAM=$ninja")
-    if ($Jobs -gt 0) {
-        $dependencyConfigureArguments += "-DDEP_MAX_THREADS=$Jobs"
-    }
-    else {
-        # Do not retain a cap from an earlier invocation of this build tree.
-        $dependencyConfigureArguments += "-UDEP_MAX_THREADS"
-    }
+    $dependencyConfigureArguments = @("--preset", $preset, "-DCMAKE_MAKE_PROGRAM=$ninja", "-DDEP_MAX_THREADS=$buildJobs", '-DPrusaSlicer_deps_CACHE_SELECTION=') + $cacheConfigureArguments
     Invoke-CMake -WorkingDirectory $dependencyDirectory `
         -ArgumentList $dependencyConfigureArguments `
         -Label "Configure $Profile dependencies"
@@ -196,6 +254,11 @@ if ($Step -in @("all", "deps")) {
                 }
             }
             $dependencyCacheHit = $dependencyCacheState -in @('hit', 'publish')
+            if ($dependencyCacheState -eq 'partial') {
+                Invoke-CMake -WorkingDirectory $dependencyDirectory `
+                    -ArgumentList ($dependencyConfigureArguments + "-DPrusaSlicer_deps_CACHE_SELECTION=$($dependencyCacheContext.PackageSelectionPath)") `
+                    -Label "Configure $Profile verified partial dependency cache"
+            }
             if ($dependencyCacheState -eq 'publish') {
                 try {
                     Publish-FastDependencyCache `
@@ -216,13 +279,9 @@ if ($Step -in @("all", "deps")) {
     if (-not $dependencyCacheHit) {
         # Ninja's console pool serializes the resource-heavy ExternalProject
         # build/install steps while downloads and configuration may overlap.
-        $dependencyBuildArguments = @("--build", "--preset", $preset)
-        if ($Jobs -gt 0) {
-            $dependencyBuildArguments += @("--parallel", "$Jobs")
-        }
-        else {
-            $dependencyBuildArguments += "--parallel"
-        }
+        # Build directly so a build preset's environment cannot override the
+        # selected CMAKE_BUILD_PARALLEL_LEVEL for nested install commands.
+        $dependencyBuildArguments = @("--build", $dependencyBuildDirectory, "--target", "deps", "--parallel", "$buildJobs")
         Invoke-CMake -WorkingDirectory $dependencyDirectory `
             -ArgumentList $dependencyBuildArguments `
             -Label "Build $Profile dependencies"
@@ -246,8 +305,20 @@ if ($Step -in @("all", "deps")) {
     }
 }
 
-if ($Step -in @("all", "configure") -or ($Step -eq "app" -and $Clean)) {
-    $configureArguments = @("--preset", $preset, "-DCMAKE_MAKE_PROGRAM=$ninja")
+$applicationCacheExists = Test-Path -LiteralPath (Join-Path $applicationBuildDirectory 'CMakeCache.txt') -PathType Leaf
+$cacheSelectionChanged = $false
+if ($applicationCacheExists) {
+    $applicationSettings = Read-FastCMakeCache -Path (Join-Path $applicationBuildDirectory 'CMakeCache.txt')
+    foreach ($language in @('C', 'CXX')) {
+        $configuredLauncher = ([string] $applicationSettings["CMAKE_${language}_COMPILER_LAUNCHER"]).Replace('\', '/')
+        if ($configuredLauncher -ne ([string] $cacheExecutable).Replace('\', '/')) {
+            $cacheSelectionChanged = $true
+        }
+    }
+}
+if ($Step -in @("all", "configure") -or
+    ($Step -eq "app" -and ($Clean -or $NoUnity -or $cacheSelectionChanged -or -not $applicationCacheExists))) {
+    $configureArguments = @("--preset", $preset, "-DCMAKE_MAKE_PROGRAM=$ninja") + $cacheConfigureArguments
     if ($NoUnity) {
         $configureArguments += "-DSLIC3R_UNITY_BUILD=OFF"
     }
@@ -257,14 +328,11 @@ if ($Step -in @("all", "configure") -or ($Step -eq "app" -and $Clean)) {
 }
 
 if ($Step -in @("all", "app")) {
-    $target = "PrusaSlicer_fast"
-    $buildArguments = @("--build", $applicationBuildDirectory, "--target", $target)
-    if ($Jobs -gt 0) {
-        $buildArguments += @("--parallel", "$Jobs")
-    }
-    else {
-        $buildArguments += "--parallel"
-    }
+    # The full release includes every wrapper and configured test target. The
+    # development profiles intentionally build only their runnable entry point.
+    $target = if ($Profile -eq 'lean-release') { 'all' } else { 'PrusaSlicer_fast' }
+    $buildArguments = @("--build", $applicationBuildDirectory, "--parallel", "$buildJobs")
+    if ($Profile -ne 'lean-release') { $buildArguments += @('--target', $target) }
     Invoke-CMake -WorkingDirectory $sourceDirectory `
         -ArgumentList $buildArguments `
         -Label "Build $target"

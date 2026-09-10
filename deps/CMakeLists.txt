@@ -24,6 +24,9 @@
 # therefore, unfortunatelly, the installation cannot be copied/moved elsewhere without re-installing wxWidgets.
 #
 cmake_minimum_required(VERSION 3.12)
+if(POLICY CMP0141)
+  cmake_policy(SET CMP0141 NEW)
+endif()
 project(PrusaSlicer_deps)
 
 # Redefine BUILD_SHARED_LIBS with default being OFF
@@ -52,6 +55,7 @@ set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/../cmake/modules)
 
 include(CompilerCache)
 slic3r_enable_compiler_cache()
+slic3r_configure_msvc_debug_information()
 
 # One cap shared by CMake-based and handwritten ExternalProject recipes.
 # Zero/unset means the detected host count.
@@ -162,14 +166,7 @@ if (${PROJECT_NAME}_ROOTS)
     endif()
   endforeach()
 
-  set(_previous_selection "")
-  while (NOT "${_previous_selection}" STREQUAL "${_selected_packages}")
-    set(_previous_selection "${_selected_packages}")
-    foreach (pkg ${_previous_selection})
-      list(APPEND _selected_packages ${DEP_${pkg}_DEPENDS})
-    endforeach()
-    list(REMOVE_DUPLICATES _selected_packages)
-  endwhile()
+  prusaslicer_dependency_closure(_selected_packages ${_selected_packages})
   dep_message(STATUS "Selected dependency closure: ${_selected_packages}")
 endif()
 
@@ -178,7 +175,11 @@ set(SYSTEM_PROVIDED_PACKAGES OpenGL)
 
 if (UNIX)
     # On UNIX systems (including Apple) ZLIB should be available
-    list(APPEND SYSTEM_PROVIDED_PACKAGES ZLIB)
+  list(APPEND SYSTEM_PROVIDED_PACKAGES ZLIB)
+  if(NOT APPLE)
+    # +PNG only defines a vendored target for MSVC/Apple; Linux consumes libpng.
+    list(APPEND SYSTEM_PROVIDED_PACKAGES PNG)
+  endif()
     if (APPLE)
         # Deal with CURL on Apple (See issue #5984 on GH):
         # Mac SDK should include CURL from at least version 10.12
@@ -193,6 +194,8 @@ include(CMakeDependentOption)
 option(${PROJECT_NAME}_SELECT_ALL "Choose all external projects to be built." ON)
 
 find_package(Git REQUIRED)
+include(${CMAKE_CURRENT_LIST_DIR}/PackageCache.cmake)
+prusaslicer_load_package_cache()
 
 # The default command line for patching. Only works for newer 
 set(PATCH_CMD ${GIT_EXECUTABLE} apply --verbose --ignore-space-change --whitespace=fix)
@@ -227,7 +230,7 @@ foreach (pkg ${FOUND_PACKAGES})
     endif()
 
     if (_package_selected AND ${PROJECT_NAME}_PACKAGE_EXCLUDES MATCHES ${pkg})
-      if (${PROJECT_NAME}_ROOTS)
+      if (${PROJECT_NAME}_ROOTS AND NOT pkg IN_LIST SYSTEM_PROVIDED_PACKAGES)
         # An excluded package inside an explicit transitive closure means the
         # requested closure is incomplete and must not be built silently.
         message(FATAL_ERROR "Selected dependency '${pkg}' is excluded by ${PROJECT_NAME}_PACKAGE_EXCLUDES")
@@ -239,7 +242,11 @@ foreach (pkg ${FOUND_PACKAGES})
     endif()
 
     if (_package_selected)
-        include(+${pkg}/${pkg}.cmake)
+        if(pkg IN_LIST PRUSASLICER_CACHED_PACKAGES)
+          prusaslicer_add_cached_package(${pkg})
+        else()
+          include(+${pkg}/${pkg}.cmake)
+        endif()
 
         list(APPEND SUPPORTED_PACKAGES ${pkg})
 
@@ -267,6 +274,7 @@ foreach (pkg ${SUPPORTED_PACKAGES})
     list(APPEND _build_list_toplevel dep_${pkg})
   endif ()
   foreach(deppkg ${DEP_${pkg}_DEPENDS})
+    prusaslicer_require_dependency_target(${pkg} ${deppkg})
     if (${deppkg} IN_LIST SYSTEM_PROVIDED_PACKAGES)
       check_system_package(${deppkg} _checked_list)
     elseif(TARGET dep_${deppkg})
@@ -276,6 +284,31 @@ foreach (pkg ${SUPPORTED_PACKAGES})
     endif ()
   endforeach()
 endforeach()
+
+# Machine-readable selected graph: cache consumers use the same resolved edges,
+# never regex-parse recipes or maintain a second package allow-list.
+set(_selection_json "{\"schema\":1,\"packages\":[")
+set(_selection_comma "")
+foreach(pkg IN LISTS SUPPORTED_PACKAGES)
+  if(NOT pkg MATCHES "^[A-Za-z0-9_]+$")
+    message(FATAL_ERROR "Invalid dependency package name '${pkg}'")
+  endif()
+  set(_edges_json "")
+  foreach(_edge IN LISTS DEP_${pkg}_DEPENDS)
+    if(_edges_json)
+      string(APPEND _edges_json ",")
+    endif()
+    string(APPEND _edges_json "\"${_edge}\"")
+  endforeach()
+  set(_system_json false)
+  if(pkg IN_LIST SYSTEM_PROVIDED_PACKAGES)
+    set(_system_json true)
+  endif()
+  string(APPEND _selection_json "${_selection_comma}{\"name\":\"${pkg}\",\"system\":${_system_json},\"depends\":[${_edges_json}]}")
+  set(_selection_comma ",")
+endforeach()
+string(APPEND _selection_json "]}\n")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dependency-selection.json" "${_selection_json}")
 
 list(REMOVE_DUPLICATES _build_list)
 dep_message(STATUS "Building dep targets (${CMAKE_BUILD_TYPE}): ${_build_list}")
@@ -314,6 +347,7 @@ if (DEP_DEBUG AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
       -D${PROJECT_NAME}_DEP_INSTALL_PREFIX=${${PROJECT_NAME}_DEP_INSTALL_PREFIX}
       -D${PROJECT_NAME}_PACKAGE_EXCLUDES="${_excl_regexp}"
       "-D${PROJECT_NAME}_ROOTS=${${PROJECT_NAME}_ROOTS}"
+      "-D${PROJECT_NAME}_PLATFORM_PACKAGES=${DEP_DEBUG_EXCLUDES};${${PROJECT_NAME}_PLATFORM_PACKAGES}"
       -D${PROJECT_NAME}_LEAN_BOOST=${${PROJECT_NAME}_LEAN_BOOST}
       -D${PROJECT_NAME}_SELECT_ALL=${${PROJECT_NAME}_SELECT_ALL}
       -D${PROJECT_NAME}_DEP_BUILD_VERBOSE=${${PROJECT_NAME}_DEP_BUILD_VERBOSE}

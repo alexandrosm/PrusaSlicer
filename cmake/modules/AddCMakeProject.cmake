@@ -42,6 +42,23 @@ function(add_cmake_project projectname)
     endif ()
 
     string(TOUPPER "${CMAKE_BUILD_TYPE}" _build_type_upper)
+    set(_debug_information_args)
+    if (SLIC3R_MSVC_DEBUG_FORMAT_MANAGED)
+        # External projects have their own first project() call and policy scope.
+        # Evaluate only this configuration here: ExternalProject generator
+        # expressions otherwise see the outer build configuration (which may
+        # be Release while constructing an explicit Debug dependency).
+        set(_dependency_debug_format "${CMAKE_MSVC_DEBUG_INFORMATION_FORMAT}")
+        if (_dependency_debug_format MATCHES "^\\$<\\$<CONFIG:Debug,RelWithDebInfo>:(Embedded|ProgramDatabase)>$")
+            set(_dependency_debug_format "${CMAKE_MATCH_1}")
+            if (NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|RelWithDebInfo)$")
+                set(_dependency_debug_format "")
+            endif()
+        endif()
+        list(APPEND _debug_information_args
+            "-DCMAKE_POLICY_DEFAULT_CMP0141:STRING=NEW"
+            "-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT:STRING=${_dependency_debug_format}")
+    endif()
     set(_configs_line -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE})
     if (_is_multi)
         set(_configs_line "")
@@ -75,6 +92,7 @@ function(add_cmake_project projectname)
             -DCMAKE_TOOLCHAIN_FILE:STRING=${CMAKE_TOOLCHAIN_FILE}
             -DBUILD_SHARED_LIBS:BOOL=${BUILD_SHARED_LIBS}
             "${_configs_line}"
+            ${_debug_information_args}
             ${DEP_CMAKE_OPTS}
             ${P_ARGS_CMAKE_ARGS}
        ${P_ARGS_UNPARSED_ARGUMENTS}

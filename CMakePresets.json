@@ -78,6 +78,23 @@
             }
         },
         {
+            "name": "lean-release",
+            "displayName": "Full-feature Release build",
+            "description": "Ninja and Release-only dependencies; GUI, STEP, tests and PDBs retained",
+            "inherits": "fast-base",
+            "binaryDir": "${sourceDir}/build-lean-release",
+            "cacheVariables": {
+                "SLIC3R_GUI": true,
+                "SLIC3R_ENABLE_FORMAT_STEP": true,
+                "SLIC3R_BUILD_TESTS": true,
+                "SLIC3R_MSVC_DEBUG_SYMBOLS": true,
+                "SLIC3R_PCH_STABLE_ONLY": false,
+                "SLIC3R_UNITY_BUILD": false,
+                "CMAKE_PREFIX_PATH": "${sourceDir}/deps/build-lean-release/destdir/usr/local",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build-lean-release/dist"
+            }
+        },
+        {
             "name": "fast-cli",
             "displayName": "Lean command-line build",
             "description": "Headless Ninja + PCH + unity build with GUI, tests, and STEP dependencies removed",
@@ -94,12 +111,30 @@
         {
             "name": "fast-gui",
             "configurePreset": "fast-gui",
+            "jobs": 2,
+            "environment": {"CMAKE_BUILD_PARALLEL_LEVEL": "2"},
             "targets": ["PrusaSlicer_fast"]
         },
         {
             "name": "fast-cli",
             "configurePreset": "fast-cli",
+            "jobs": 2,
+            "environment": {"CMAKE_BUILD_PARALLEL_LEVEL": "2"},
             "targets": ["PrusaSlicer_fast"]
+        },
+        {
+            "name": "lean-release",
+            "configurePreset": "lean-release",
+            "jobs": 2,
+            "environment": {"CMAKE_BUILD_PARALLEL_LEVEL": "2"}
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "lean-release",
+            "configurePreset": "lean-release",
+            "output": {"outputOnFailure": true},
+            "execution": {"jobs": 2, "noTestsAction": "error"}
         }
     ]
 }
