@@ -4,8 +4,9 @@ Status: preparation only, based on the local review evidence recorded on
 2026-09-10. **No upstream PrusaSlicer PR has been created as part of this work.**
 The validation below is local evidence, not a claim that GitHub CI has passed.
 
-First collect the reviewed modifications on an integration branch. Then extract
-small, independently testable commits for future upstream proposals. Publishing
+The reviewed modifications are collected on
+[`streamlining/all-improvements`](https://github.com/alexandrosm/PrusaSlicer/tree/streamlining/all-improvements).
+Next extract small, independently testable commits for future upstream proposals. Publishing
 the integration branch does not mean every experiment is recommended for merge.
 Use [Review-improvements.md](Review-improvements.md) for current measurements and
 limitations; this document describes scope and sequencing, not projected savings.
@@ -22,11 +23,26 @@ commits are useful provenance, but not all are suitable PR boundaries:
 | `4c7a985` — streamlined development profiles | A broad 46-file integration change, including profiles, dependency recipes, caching, unity/PCH work and Windows source changes. Split by purpose; do not submit it wholesale as an uncontested optimization. |
 | `3e2f70f` — package-size measurements | Historical evidence; refresh relevant results in each PR rather than treating documentation as implementation. |
 
-The newer reviewed changes include uncommitted source, build-tool, test and
-documentation files. They must be included deliberately before an integration
-snapshot is considered complete. Generated binaries, object files, build trees,
-compiled caches, downloaded tool archives, `out/`, and `.agents/` are not product
-changes to publish. Curate or redact any attached logs that contain local paths.
+The newer work is organized into the following integration commits. These groups
+keep experiments separate, but the larger build/cache groups still need finer
+extraction before proposing independent upstream PRs.
+
+| Integration commit | Scope |
+| --- | --- |
+| `091bad7` | Exclude local investigation artifacts; legitimate OBJ mesh resources remain trackable. |
+| `7c3f20f` | Explicit-only helpers, headless launcher selection and redundant runtime-copy cleanup. |
+| `f7b3f91` | Dependency graph consolidation, unused component trimming and Half-provider correction. |
+| `891b149` | Font-atlas lifetime change and standalone regression tests. |
+| `c76e615` | Guarded build profiles, compiler cache, dependency caches and their fixtures. |
+| `ff1f16f` | Verified release staging and reversible offline STL transport. |
+| `b3e7194` | Opt-in mesh search, QA and incremental asset caching. |
+| `2c85453` | Isolated dependency-registration probes, provenance and third-party license. |
+| `7c4f39f` | Measured results and initial upstream roadmap. |
+
+Fork CI and publication follow-up changes are separate commits. Generated
+compiler object files, binaries, build trees, compiled caches, downloaded tool
+archives, `out/`, and `.agents/` remain local; they are not source changes to
+publish. Curate or redact any attached logs that contain local paths.
 
 ## Track A: small production changes to propose first
 

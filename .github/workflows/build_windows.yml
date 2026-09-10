@@ -2,6 +2,9 @@ name: Build windows
 
 on:
   push:
+    # Integration branches use the self-contained streamlining checks; this
+    # inherited workflow requires Prusa's external release infrastructure.
+    branches-ignore: ['streamlining/**']
   workflow_dispatch:
     inputs:
       create_pdb:

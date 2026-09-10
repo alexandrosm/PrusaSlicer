@@ -1,0 +1,56 @@
+name: Streamlining tooling
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Fork PRs execute untrusted code only on disposable hosted runners. No secrets,
+# write token, pull_request_target, reusable private workflow, or deployment.
+permissions:
+  contents: read
+
+concurrency:
+  group: streamlining-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-tools:
+    name: Windows tooling, native codec and font-atlas fixtures
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      CMAKE_BUILD_PARALLEL_LEVEL: '1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      # Official action tag -> commit identities verified through GitHub's API.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install small pinned tooling prerequisites (binary wheels only)
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: -r .github/ci/requirements-windows-tools.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Tooling prerequisite installation failed' }
+      - name: Run compiler-free build fixtures and tiny native codec regression
+        run: |
+          $python = (Get-Command python -CommandType Application | Select-Object -First 1).Source
+          & .github/ci/run-windows-tools.ps1 -Python $python
+      - name: Preserve logs, exact test outcomes, and native fixture
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: streamlining-windows-${{ github.run_attempt }}
+          path: out/ci-streamlining/
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 1

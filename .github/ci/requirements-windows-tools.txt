@@ -1,0 +1,4 @@
+# CI-only tool environment: no application/geometry dependencies or source builds.
+psutil==7.2.2
+cmake==3.31.6
+ninja==1.13.2
