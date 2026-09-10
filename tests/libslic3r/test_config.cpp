@@ -189,12 +189,17 @@ TEST_CASE("Normalize fdm retract layer change", "[Config]") {
     CHECK(config.option<ConfigOptionBools>("retract_layer_change")->values == std::vector<unsigned char>{0, 0});
 }
 
-TEST_CASE("Can read ini with invalid items", "[Config]") {
+TEST_CASE("Can read ini with unknown items and retain valid neighbors", "[Config]") {
     std::string path = std::string(TEST_DATA_DIR) + "/test_config/bad_config_options.ini";
 
     DynamicPrintConfig config;
-    config.load(path, ForwardCompatibilitySubstitutionRule::Disable);
-    //Did not crash.
+    REQUIRE_NOTHROW(config.load(path, ForwardCompatibilitySubstitutionRule::Disable));
+    REQUIRE(config.option<ConfigOptionFloat>("layer_height") != nullptr);
+    CHECK(config.option<ConfigOptionFloat>("layer_height")->value == 0.25);
+    REQUIRE(config.option<ConfigOptionInt>("perimeters") != nullptr);
+    CHECK(config.option<ConfigOptionInt>("perimeters")->value == 3);
+    CHECK(config.option("unknown_fixture_option_before") == nullptr);
+    CHECK(config.option("unknown_fixture_option_after") == nullptr);
 }
 
 struct SerializationTestData {
