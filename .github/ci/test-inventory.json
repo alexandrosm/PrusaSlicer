@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "lanes": {
+    "tooling": [
+      "tools/tests/test_adjust_bed_meshes.py",
+      "tools/tests/test_benchmark_pch.py",
+      "tools/tests/test_experiment_helpers.py",
+      "tools/tests/test_package_portable.py",
+      "tools/tests/test_run_guarded.py",
+      "tools/tests/test_sccache_supervisor.py",
+      "tools/tests/test_sccache_fixture.py",
+      "tools/tests/test_stage_windows_release.py",
+      "tools/tests/test_stl_codec.py",
+      "tools/tests/test_stl_restore.py",
+      "tools/tests/test_verify_stl_package.py",
+      "tests/build_tools/test_verify_release_smoke.py",
+      ".github/ci/test_ci_test_policy.py",
+      ".github/ci/test_release_ci.py"
+    ],
+    "geometry": [
+      "tools/tests/test_bed_mesh_geometry.py",
+      "tools/tests/test_bed_mesh_spatial.py",
+      "tools/tests/test_bed_mesh_certificates.py"
+    ]
+  }
+}

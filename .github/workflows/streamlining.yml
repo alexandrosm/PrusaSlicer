@@ -16,9 +16,13 @@ concurrency:
 
 jobs:
   windows-tools:
-    name: Windows tooling, native codec and font-atlas fixtures
+    name: Windows tooling and mechanisms (CMake ${{ matrix.cmake }})
     runs-on: windows-2022
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        cmake: ['3.31.6', '4.4.3']
     defaults:
       run:
         shell: pwsh
@@ -41,16 +45,60 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check --only-binary=:all: -r .github/ci/requirements-windows-tools.txt
           if ($LASTEXITCODE -ne 0) { throw 'Tooling prerequisite installation failed' }
+          python -m pip install --disable-pip-version-check --only-binary=:all: 'cmake==${{ matrix.cmake }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Matrix CMake installation failed' }
       - name: Run compiler-free build fixtures and tiny native codec regression
         run: |
           $python = (Get-Command python -CommandType Application | Select-Object -First 1).Source
           & .github/ci/run-windows-tools.ps1 -Python $python
-      - name: Preserve logs, exact test outcomes, and native fixture
+      - name: Require real compiler-cache hits and PCH reuse after a header edit
+        run: |
+          & .github/ci/run-native-ci.ps1 -Python (Get-Command python).Source
+      - name: Preserve compact logs, exact test outcomes, and mechanism evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: streamlining-windows-${{ github.run_attempt }}
-          path: out/ci-streamlining/
+          name: streamlining-windows-${{ matrix.cmake }}-${{ github.run_attempt }}
+          path: |
+            out/ci-streamlining/reports/
+            out/ci-mechanisms/reports/
           if-no-files-found: warn
           retention-days: 7
+          compression-level: 1
+
+  geometry:
+    name: Real geometry kernels (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install pinned real geometry engines (binary wheels only)
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: -r .github/ci/requirements-geometry.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Geometry prerequisite installation failed' }
+      - name: Run all assigned real-kernel regressions without skips
+        run: |
+          & .github/ci/run-geometry-tests.ps1 -Python (Get-Command python).Source
+      - name: Preserve compact geometry evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: streamlining-geometry-${{ github.run_attempt }}
+          path: out/ci-geometry/reports/
+          retention-days: 7
+          if-no-files-found: warn
           compression-level: 1

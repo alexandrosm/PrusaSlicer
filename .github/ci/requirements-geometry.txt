@@ -1,0 +1,4 @@
+# Separate CI lane only: real numerical/spatial/QEM backends, binary wheels only.
+# Reuse the production experiment pins instead of maintaining divergent copies.
+-r ../../tools/mesh-experiment-requirements.txt
+psutil==7.2.2
