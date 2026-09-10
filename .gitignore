@@ -5,6 +5,13 @@ Build.bat
 /build-no-occt/
 /build-fast-gui/
 /build-fast-cli/
+/build-lean-release/
+/out/
+# Local investigation outputs include large binaries and resource junctions.
+/.agents/
+/compare_step.obj
+/tools/__pycache__/
+/tools/tests/__pycache__/
 /shareddeps/
 MYMETA.json
 MYMETA.yml
