@@ -125,7 +125,9 @@ if (OPENVDB_FIND_MODULE_PATH)
 endif ()
 # ###########################################################################
 
-cmake_minimum_required(VERSION 3.3)
+# Preserve the module's minimum while declaring a reviewed policy baseline;
+# CMake 4 no longer accepts an implicit pre-3.5 compatibility policy.
+cmake_minimum_required(VERSION 3.3...3.12)
 # Monitoring <PackageName>_ROOT variables
 if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
