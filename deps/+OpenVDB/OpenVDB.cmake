@@ -15,6 +15,8 @@ add_cmake_project(OpenVDB
         -DCMAKE_POSITION_INDEPENDENT_CODE=ON 
         -DOPENVDB_BUILD_PYTHON_MODULE=OFF
         -DUSE_BLOSC=ON
+        # OpenVDB 8.2 provides its own Half type; external OpenEXR is unused.
+        -DUSE_IMATH_HALF:BOOL=OFF
         -DOPENVDB_CORE_SHARED=${_build_shared} 
         -DOPENVDB_CORE_STATIC=${_build_static}
         -DOPENVDB_ENABLE_RPATH:BOOL=OFF
@@ -22,5 +24,3 @@ add_cmake_project(OpenVDB
         -DOPENVDB_BUILD_VDB_PRINT=OFF
         -DDISABLE_DEPENDENCY_VERSION_CHECKS=ON # Centos6 has old zlib
 )
-
-set(DEP_OpenVDB_DEPENDS TBB Blosc OpenEXR Boost)

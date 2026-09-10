@@ -71,6 +71,8 @@ This will define the following variables:
   True if the OpenVDB Library has been built with log4cplus support
 ``OpenVDB_USES_EXR``
   True if the OpenVDB Library has been built with openexr support
+``OpenVDB_USES_IMATH_HALF``
+  True if OpenVDB uses an external Imath/IlmBase Half implementation.
 ``OpenVDB_ABI``
   Set if this module was able to determine the ABI number the located
   OpenVDB Library was built against. Unset otherwise.
@@ -350,24 +352,56 @@ macro(just_fail msg)
   return()
 endmacro()
 
-find_package(IlmBase QUIET)
-if(NOT IlmBase_FOUND)
-  pkg_check_modules(IlmBase QUIET IlmBase)
-endif()
-if (IlmBase_FOUND AND NOT TARGET IlmBase::Half)
-  message(STATUS "Falling back to IlmBase found by pkg-config...")
-
-  find_library(IlmHalf_LIBRARY NAMES Half)
-  if(IlmHalf_LIBRARY-NOTFOUND OR NOT IlmBase_INCLUDE_DIRS)
-    just_fail("IlmBase::Half can not be found!")
+# Since 8.1, version.h records whether OpenVDB uses its embedded Half type.
+# Older releases require IlmBase. Follow the installed header, rather than
+# introducing an external dependency into an embedded-Half build.
+set(OpenVDB_USES_IMATH_HALF ON)
+set(_OPENVDB_HALF_DEPENDENCY "")
+set(_OPENVDB_USES_IMATH3 OFF)
+if(OpenVDB_VERSION VERSION_GREATER_EQUAL 8.1)
+  file(STRINGS "${OpenVDB_INCLUDE_DIR}/openvdb/version.h" _openvdb_half_define
+    REGEX "^[\t ]*#[\t ]*define[\t ]+OPENVDB_USE_IMATH_HALF([\t ]|$)")
+  if(NOT _openvdb_half_define)
+    set(OpenVDB_USES_IMATH_HALF OFF)
   endif()
-  
-  add_library(IlmBase::Half UNKNOWN IMPORTED)
-  set_target_properties(IlmBase::Half PROPERTIES
-    IMPORTED_LOCATION "${IlmHalf_LIBRARY}"
-    INTERFACE_INCLUDE_DIRECTORIES "${IlmBase_INCLUDE_DIRS}")
-elseif(NOT IlmBase_FOUND)
-  just_fail("IlmBase::Half can not be found!")
+  file(STRINGS "${OpenVDB_INCLUDE_DIR}/openvdb/version.h" _openvdb_imath_define
+    REGEX "^[\t ]*#[\t ]*define[\t ]+OPENVDB_IMATH_VERSION([\t ]|$)")
+  if(_openvdb_imath_define)
+    set(_OPENVDB_USES_IMATH3 ON)
+  endif()
+  unset(_openvdb_half_define)
+  unset(_openvdb_imath_define)
+endif()
+
+if(OpenVDB_USES_IMATH_HALF)
+  if(_OPENVDB_USES_IMATH3)
+    # Types.h includes Imath/half.h for this configuration. Do not substitute
+    # legacy IlmBase headers/libraries if the required Imath installation is absent.
+    find_package(Imath CONFIG QUIET)
+    if(NOT TARGET Imath::Imath)
+      just_fail("Imath::Imath can not be found!")
+    endif()
+    set(_OPENVDB_HALF_DEPENDENCY Imath::Imath)
+  else()
+    find_package(IlmBase QUIET)
+    if(NOT IlmBase_FOUND)
+      pkg_check_modules(IlmBase QUIET IlmBase)
+    endif()
+    if(IlmBase_FOUND AND NOT TARGET IlmBase::Half)
+      message(STATUS "Falling back to IlmBase found by pkg-config...")
+      find_library(IlmHalf_LIBRARY NAMES Half)
+      if(NOT IlmHalf_LIBRARY OR NOT IlmBase_INCLUDE_DIRS)
+        just_fail("IlmBase::Half can not be found!")
+      endif()
+      add_library(IlmBase::Half UNKNOWN IMPORTED)
+      set_target_properties(IlmBase::Half PROPERTIES
+        IMPORTED_LOCATION "${IlmHalf_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${IlmBase_INCLUDE_DIRS}")
+    elseif(NOT IlmBase_FOUND)
+      just_fail("IlmBase::Half can not be found!")
+    endif()
+    set(_OPENVDB_HALF_DEPENDENCY IlmBase::Half)
+  endif()
 endif()
 find_package(TBB ${_quiet} ${_required} COMPONENTS tbb)
 find_package(ZLIB ${_quiet} ${_required})
@@ -474,7 +508,7 @@ endif()
 set(_OPENVDB_VISIBLE_DEPENDENCIES
   Boost::iostreams
   Boost::system
-  IlmBase::Half
+  ${_OPENVDB_HALF_DEPENDENCY}
 )
 
 set(_OPENVDB_DEFINITIONS)
@@ -576,8 +610,12 @@ foreach(COMPONENT ${OpenVDB_FIND_COMPONENTS})
 
    if (OPENVDB_USE_STATIC_LIBS)
     set_target_properties(OpenVDB::${COMPONENT} PROPERTIES
-      INTERFACE_COMPILE_DEFINITIONS "OPENVDB_STATICLIB;OPENVDB_OPENEXR_STATICLIB"
+      INTERFACE_COMPILE_DEFINITIONS "OPENVDB_STATICLIB"
     )
+    if(OpenVDB_USES_IMATH_HALF)
+      set_property(TARGET OpenVDB::${COMPONENT} APPEND PROPERTY
+        INTERFACE_COMPILE_DEFINITIONS OPENVDB_OPENEXR_STATICLIB)
+    endif()
    endif()
   endif()
 endforeach()
@@ -589,3 +627,5 @@ endif()
 unset(_OPENVDB_DEFINITIONS)
 unset(_OPENVDB_VISIBLE_DEPENDENCIES)
 unset(_OPENVDB_HIDDEN_DEPENDENCIES)
+unset(_OPENVDB_HALF_DEPENDENCY)
+unset(_OPENVDB_USES_IMATH3)

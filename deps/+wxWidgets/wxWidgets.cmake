@@ -34,6 +34,14 @@ add_cmake_project(wxWidgets
     CMAKE_ARGS
         "-DCMAKE_DEBUG_POSTFIX:STRING="
         -DwxBUILD_PRECOMP=ON
+        # The application uses base, core, adv, html, gl and webview. Avoid
+        # building optional libraries (and the XRC compiler) it does not use.
+        -DwxUSE_AUI=OFF
+        -DwxUSE_PROPGRID=OFF
+        -DwxUSE_RIBBON=OFF
+        -DwxUSE_RICHTEXT=OFF
+        -DwxUSE_STC=OFF
+        -DwxUSE_XRC=OFF
         ${_wx_toolkit}
         -DwxUSE_MEDIACTRL=OFF
         -DwxUSE_DETECT_SM=OFF
@@ -57,7 +65,6 @@ add_cmake_project(wxWidgets
         ${_wx_secretstore}
 )
 
-set(DEP_wxWidgets_DEPENDS ZLIB PNG EXPAT JPEG NanoSVG)
 
 
 if (MSVC)

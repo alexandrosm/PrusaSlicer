@@ -30,4 +30,3 @@ add_cmake_project(LibBGCode
 
 # set(DEP_LibBGCode_deps_DEPENDS ZLIB Boost)
 # set(DEP_LibBGCode_DEPENDS LibBGCode_deps)
-set(DEP_LibBGCode_DEPENDS ZLIB Boost heatshrink)

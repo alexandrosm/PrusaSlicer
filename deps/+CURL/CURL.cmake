@@ -66,12 +66,8 @@ add_cmake_project(CURL
   PATCH_COMMAND       "${_patch_command}"
   CMAKE_ARGS
     -DBUILD_TESTING:BOOL=OFF
+    # PrusaSlicer links libcurl; the curl command-line program is not used.
+    -DBUILD_CURL_EXE:BOOL=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     ${_curl_platform_flags}
 )
-
-set(DEP_CURL_DEPENDS ZLIB)
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  list(APPEND DEP_CURL_DEPENDS OpenSSL)
-endif ()
-

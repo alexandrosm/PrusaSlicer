@@ -5,5 +5,3 @@ add_cmake_project(
 )
 
 include(GNUInstallDirs)
-
-set(DEP_CGAL_DEPENDS Boost GMP MPFR)

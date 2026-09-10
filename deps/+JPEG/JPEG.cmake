@@ -10,5 +10,3 @@ add_cmake_project(JPEG
         -DWITH_TESTS=OFF
         -DWITH_FUZZ=OFF
 )
-
-set(DEP_JPEG_DEPENDS ZLIB)

@@ -25,5 +25,3 @@ add_cmake_project(Blosc
         -DBUILD_BENCHMARKS=OFF
         -DPREFER_EXTERNAL_ZLIB=ON
 )
-
-set(DEP_Blosc_DEPENDS ZLIB)

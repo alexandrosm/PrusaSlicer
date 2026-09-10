@@ -1,5 +1,5 @@
-# Dependency edges used to resolve a minimal transitive package closure.
-# Keep these in sync with the DEP_<package>_DEPENDS declarations in +*/<package>.cmake.
+# Single authoritative dependency graph. Recipes must not redefine these edges.
+# Keep this module side-effect-free so closure/contract tests need no compiler.
 
 set(DEP_Blosc_DEPENDS ZLIB)
 set(DEP_Boost_DEPENDS ZLIB)
@@ -13,6 +13,27 @@ set(DEP_LibBGCode_DEPENDS ZLIB Boost heatshrink)
 set(DEP_MPFR_DEPENDS GMP)
 set(DEP_OpenCSG_DEPENDS GLEW ZLIB)
 set(DEP_OpenEXR_DEPENDS ZLIB)
-set(DEP_OpenVDB_DEPENDS TBB Blosc OpenEXR Boost)
+set(DEP_OpenVDB_DEPENDS TBB Blosc Boost)
 set(DEP_PNG_DEPENDS ZLIB)
 set(DEP_wxWidgets_DEPENDS ZLIB PNG EXPAT JPEG NanoSVG)
+
+function(prusaslicer_dependency_closure output)
+  set(_closure ${ARGN})
+  set(_previous "")
+  while(NOT "${_previous}" STREQUAL "${_closure}")
+    set(_previous ${_closure})
+    foreach(_package IN LISTS _previous)
+      list(APPEND _closure ${DEP_${_package}_DEPENDS})
+    endforeach()
+    list(REMOVE_DUPLICATES _closure)
+  endwhile()
+  list(SORT _closure)
+  set(${output} ${_closure} PARENT_SCOPE)
+endfunction()
+
+function(prusaslicer_require_dependency_target package dependency)
+  if(NOT package IN_LIST SYSTEM_PROVIDED_PACKAGES AND
+      NOT dependency IN_LIST SYSTEM_PROVIDED_PACKAGES AND NOT TARGET dep_${dependency})
+    message(FATAL_ERROR "Unresolved non-system dependency '${dependency}' required by '${package}'")
+  endif()
+endfunction()

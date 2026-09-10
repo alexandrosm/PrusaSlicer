@@ -25,5 +25,4 @@ if (MSVC OR APPLE)
             ${_disable_neon_extension}
     )
 
-    set(DEP_PNG_DEPENDS ZLIB)
 endif()

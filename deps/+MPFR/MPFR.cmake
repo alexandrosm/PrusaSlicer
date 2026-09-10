@@ -47,5 +47,3 @@ else ()
         USES_TERMINAL_INSTALL TRUE
     )
 endif ()
-
-set(DEP_MPFR_DEPENDS GMP)

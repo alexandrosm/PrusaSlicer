@@ -38,5 +38,3 @@ add_cmake_project(Boost
         "${_context_abi_line}"
         "${_context_arch_line}"
 )
-
-set(DEP_Boost_DEPENDS ZLIB)

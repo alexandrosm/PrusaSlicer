@@ -11,5 +11,3 @@ add_cmake_project(OpenEXR
         -DOPENEXR_VIEWERS_ENABLE:BOOL=OFF
         -DOPENEXR_BUILD_UTILS:BOOL=OFF
 )
-
-set(DEP_OpenEXR_DEPENDS ZLIB)
