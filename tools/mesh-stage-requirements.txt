@@ -1,0 +1,8 @@
+# Build-time only: isolated, opt-in bed-mesh packaging experiment.
+# These packages are not included in the application or its archive.
+numpy==2.4.6
+scipy==1.17.1
+pymeshlab==2025.7.post1
+msvc-runtime==14.44.35112; sys_platform == 'win32'
+trimesh==4.12.2
+rtree==1.4.1
