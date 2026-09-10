@@ -31,6 +31,7 @@ add_subdirectory(sla_print)
 add_subdirectory(cpp17 EXCLUDE_FROM_ALL)    # does not have to be built all the time
 
 if (SLIC3R_GUI)
+    add_subdirectory(imgui)
     add_subdirectory(slic3rutils)
 endif()
 

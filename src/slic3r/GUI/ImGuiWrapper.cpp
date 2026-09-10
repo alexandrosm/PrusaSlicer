@@ -4,6 +4,7 @@
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "ImGuiWrapper.hpp"
+#include "ImGuiFontAtlas.hpp"
 
 #include <cstdio>
 #include <vector>
@@ -1211,7 +1212,8 @@ void ImGuiWrapper::init_font(bool compress)
     // Build texture atlas
     unsigned char* pixels;
     int width, height;
-    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);   // Load as RGBA 32-bits (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
+    // The atlas also contains colored SVG icons, so it needs RGBA pixels.
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 
     auto load_icon_from_svg = [this, &io, pixels, width, &rect_id](const std::pair<const wchar_t, std::string> icon, int icon_sz) {
         if (const ImFontAtlas::CustomRect* rect = io.Fonts->GetCustomRectByIndex(rect_id)) {
@@ -1259,15 +1261,26 @@ void ImGuiWrapper::init_font(bool compress)
     glsafe(::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
     glsafe(::glPixelStorei(GL_UNPACK_ROW_LENGTH, 0));
     if (compress && OpenGLManager::are_compressed_textures_supported())
-        glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
+        ::glTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     else
-        glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
+        ::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    // Read the error here rather than through glsafe(), which consumes it in
+    // debug builds. Keep the build data if texture creation/upload failed.
+    const GLenum upload_error = ::glGetError();
 
     // Store our identifier
     io.Fonts->TexID = (ImTextureID)(intptr_t)m_font_texture;
 
     // Restore state
     glsafe(::glBindTexture(GL_TEXTURE_2D, last_texture));
+
+    if (m_font_texture != 0 && upload_error == GL_NO_ERROR) {
+        // Language, DPI and missing-glyph changes rebuild from the font files.
+        // Rendering only needs the glyphs, packed icon rectangles and GL texture.
+        clear_font_atlas_build_data(*io.Fonts);
+    } else {
+        BOOST_LOG_TRIVIAL(error) << "ImGui font atlas upload failed: " << upload_error;
+    }
 }
 
 void ImGuiWrapper::init_input()
