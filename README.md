@@ -3,6 +3,27 @@
 
 # PrusaSlicer
 
+## Streamlining integration branch
+
+This branch collects the build, dependency-cache, resource-safety and packaging
+work against PrusaSlicer 2.9.6. It is an integration workspace for testing and
+preparing focused upstream pull requests, not an official Prusa release.
+
+- [Build instructions and full-feature release profile](doc/Fast-build.md)
+- [Implemented changes, measurements and validation limits](doc/Review-improvements.md)
+- [Proposed upstream PR groups and submission order](doc/Upstream-PR-plan.md)
+- [Dependency-cache contracts](doc/Dependency-package-cache.md)
+- [Fork CI checks](.github/workflows/streamlining.yml)
+
+Use `./build_fast.ps1 -Profile lean-release` for the full-feature build; the bare
+command selects a reduced development profile. Packaging experiments are opt-in:
+the 62.50 MB original-geometry transport needs offline preparation, while the
+61.11 MB variant also changes mesh geometry and lacks full GUI/picking validation.
+Neither is a signed installer or a demonstrated 50 MB release. Generated builds,
+private scratch outputs and package archives are not part of this source branch.
+
+## Upstream project
+
 You may want to check the [PrusaSlicer project page](https://www.prusa3d.com/prusaslicer/).
 Prebuilt Windows, OSX and Linux binaries are available through the [git releases page](https://github.com/prusa3d/PrusaSlicer/releases) or from the [Prusa3D downloads page](https://www.prusa3d.com/drivers/). There are also [3rd party Linux builds available](https://github.com/prusa3d/PrusaSlicer/wiki/PrusaSlicer-on-Linux---binary-distributions).
 
