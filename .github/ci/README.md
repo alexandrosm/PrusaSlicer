@@ -8,6 +8,11 @@ The `Streamlining tooling` workflow validates the integration branch on a
 disposable GitHub-hosted Windows 2022 runner. It needs no repository secrets or
 Prusa's private release infrastructure. Official actions are pinned to commit
 identities; Python tooling is version-pinned and installed from binary wheels.
+Both CMake matrix lanes select the wheel's RECORD-verified native CMake/CTest
+executables, not pip's generated launchers. Their compact bootstrap reports
+live in `out/ci-bootstrap/`. Pure fake-wheel and cache-handoff regressions guard
+this selection; the release lane separately proves a real fresh-runner handoff
+before starting dependency compilation.
 
 Coverage includes PowerShell 7 and 5.1 build-wrapper checks, dependency-package
 cache and CMake policy fixtures, command quoting, a freshly compiled native STL

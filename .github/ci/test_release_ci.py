@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -120,6 +121,30 @@ class ReleaseCiTests(unittest.TestCase):
                        "SLIC3R_MSVC_DEBUG_SYMBOLS", "SLIC3R_STATIC"):
             self.assertIn(str(effective[option]).upper(), ("TRUE", "ON", "1", "YES"), option)
         self.assertEqual(effective["CMAKE_BUILD_TYPE"], "Release")
+
+    def test_release_bootstraps_native_cmake_before_every_prepare(self):
+        workflow = (REPOSITORY / ".github/workflows/streamlining-release.yml").read_text()
+        for job in ("identity", "dependencies", "release"):
+            # Extract through the next job, not its four-space-indented keys.
+            section = workflow.split(f"\n  {job}:\n", 1)[1]
+            section = re.split(r"\n  [a-z][a-z-]*:\n", section, maxsplit=1)[0]
+            with self.subTest(job=job):
+                self.assertLess(section.index("select-native-cmake.py"), section.index("-Stage Prepare"))
+                self.assertIn("--github-path", section)
+                self.assertIn("Native CMake selection failed", section)
+
+    def test_release_checks_handoff_before_build_and_identity_before_sdk_lookup(self):
+        workflow = (REPOSITORY / ".github/workflows/streamlining-release.yml").read_text()
+        producer = workflow.split("\n  dependencies:\n", 1)[1].split("\n  release:\n", 1)[0]
+        self.assertIn("needs: identity", producer)
+        self.assertIn("needs.identity.outputs.proof-key", producer)
+        self.assertIn("fail-on-cache-miss: true", producer)
+        self.assertLess(producer.index("-Operation Verify"), producer.index("-Stage Dependencies"))
+        consumer = workflow.split("\n  release:\n", 1)[1]
+        self.assertLess(consumer.index("PRODUCER_KEY -ne $env:CONSUMER_KEY"),
+                        consumer.index("actions/cache/restore@"))
+        self.assertIn("fail-on-cache-miss: true", consumer)
+        self.assertNotIn("restore-keys:", workflow)
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ try {
         Invoke-Checked $shell @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'tests/build_tools/test_fast_build.ps1') ('wrapper-' + [IO.Path]::GetFileNameWithoutExtension($shell))
     }
     Invoke-Checked $pwsh @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', 'tests/build_tools/test_package_cache.ps1', '-CMake', $cmake, '-Ninja', $ninja) 'package-cache'
+    Invoke-Checked $pwsh @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', '.github/ci/test-cmake-handoff.tests.ps1') 'cmake-handoff-contracts'
     Invoke-Checked $cmake @('-P', 'tests/build_tools/test_compiler_cache.cmake') 'compiler-cache-policy'
     Invoke-Checked $cmake @("-DTEST_BINARY_DIR=$output/openvdb-finder", '-DTEST_GENERATOR=Ninja', "-DTEST_MAKE_PROGRAM=$ninja", '-P', 'tests/build_tools/test_openvdb_finder.cmake') 'openvdb-finder'
 

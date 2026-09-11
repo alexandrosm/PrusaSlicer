@@ -16,7 +16,8 @@
       "tests/build_tools/test_verify_release_smoke.py",
       "tests/build_tools/test_dependency_patches.py",
       ".github/ci/test_ci_test_policy.py",
-      ".github/ci/test_release_ci.py"
+      ".github/ci/test_release_ci.py",
+      ".github/ci/test_native_cmake.py"
     ],
     "geometry": [
       "tools/tests/test_bed_mesh_geometry.py",

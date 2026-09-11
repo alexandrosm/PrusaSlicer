@@ -23,8 +23,63 @@ env:
   OPENBLAS_NUM_THREADS: '1'
 
 jobs:
-  dependencies:
+  identity:
+    name: Cheap native-tool identity producer
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ci release]')
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    outputs:
+      proof-key: release-handoff-v1-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install pinned binary tooling
+        run: |
+          python -m pip install --only-binary=:all: -r .github/ci/requirements-windows-tools.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Tool install failed' }
+      - name: Select wheel-verified native CMake (not the pip launcher)
+        run: |
+          python -B .github/ci/select-native-cmake.py --github-path "$env:GITHUB_PATH" --report out/ci-release/reports/native-cmake.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native CMake selection failed' }
+      - name: Configure real graph without building dependencies
+        id: prepare
+        run: |
+          & .github/ci/run-release.ps1 -Stage Prepare -Python (Get-Command python).Source
+      - name: Publish tiny production-identity proof
+        env:
+          PRODUCTION_KEY: ${{ steps.prepare.outputs.key }}
+        run: |
+          & .github/ci/test-cmake-handoff.ps1 -Operation Publish -PrepareReport out/ci-release/reports/dependency-input.json -ProductionKey $env:PRODUCTION_KEY -ProofDirectory out/ci-cmake-handoff -OutputReport out/ci-release/reports/cmake-handoff-publish.json
+      - name: Transport only the tiny proof
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: source/out/ci-cmake-handoff
+          key: release-handoff-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Collect preflight evidence
+        if: always()
+        run: |
+          & .github/ci/run-release.ps1 -Stage Report -Python (Get-Command python).Source
+      - name: Upload compact preflight diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-identity-${{ github.run_attempt }}
+          path: source/out/ci-release/reports/
+          retention-days: 7
+          compression-level: 1
+
+  dependencies:
+    needs: identity
     runs-on: windows-2022
     timeout-minutes: 180
     defaults:
@@ -46,10 +101,25 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: -r .github/ci/requirements-windows-tools.txt
           if ($LASTEXITCODE -ne 0) { throw 'Tool install failed' }
+      - name: Select wheel-verified native CMake (not the pip launcher)
+        run: |
+          python -B .github/ci/select-native-cmake.py --github-path "$env:GITHUB_PATH" --report out/ci-release/reports/native-cmake.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native CMake selection failed' }
       - name: Configure dependency closure and compute production cache identity
         id: prepare
         run: |
           & .github/ci/run-release.ps1 -Stage Prepare -Python (Get-Command python).Source
+      - name: Restore tiny proof on an independent runner before any dependency build
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: source/out/ci-cmake-handoff
+          key: ${{ needs.identity.outputs.proof-key }}
+          fail-on-cache-miss: true
+      - name: Require identical production inputs and byte-exact tiny handoff
+        env:
+          PRODUCTION_KEY: ${{ steps.prepare.outputs.key }}
+        run: |
+          & .github/ci/test-cmake-handoff.ps1 -Operation Verify -PrepareReport out/ci-release/reports/dependency-input.json -ProductionKey $env:PRODUCTION_KEY -ProofDirectory out/ci-cmake-handoff -OutputReport out/ci-release/reports/cmake-handoff-verify.json
       - name: Restore prior exact-identity SDK if available
         id: cache
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -100,16 +170,14 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: -r .github/ci/requirements-windows-tools.txt
           if ($LASTEXITCODE -ne 0) { throw 'Tool install failed' }
+      - name: Select wheel-verified native CMake (not the pip launcher)
+        run: |
+          python -B .github/ci/select-native-cmake.py --github-path "$env:GITHUB_PATH" --report out/ci-release/reports/native-cmake.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native CMake selection failed' }
       - name: Independently compute identity on this fresh runner
         id: prepare
         run: |
           & .github/ci/run-release.ps1 -Stage Prepare -Python (Get-Command python).Source
-      - name: Restore exact producer SDK (no stale-key fallback)
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.prepare.outputs.entry }}
-          key: ${{ needs.dependencies.outputs.key }}
-          fail-on-cache-miss: true
       - name: Require identical toolchain and path identities
         env:
           PRODUCER_KEY: ${{ needs.dependencies.outputs.key }}
@@ -118,6 +186,12 @@ jobs:
           if ($env:PRODUCER_KEY -ne $env:CONSUMER_KEY) {
             throw 'Producer/consumer toolchain or path identity differs; compare dependency-input.json reports'
           }
+      - name: Restore exact producer SDK (no stale-key fallback)
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.prepare.outputs.entry }}
+          key: ${{ needs.dependencies.outputs.key }}
+          fail-on-cache-miss: true
       - name: Require verified fresh-runner restore without source compilation
         run: |
           & .github/ci/run-release.ps1 -Stage Restore -Python (Get-Command python).Source

@@ -47,6 +47,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Tooling prerequisite installation failed' }
           python -m pip install --disable-pip-version-check --only-binary=:all: 'cmake==${{ matrix.cmake }}'
           if ($LASTEXITCODE -ne 0) { throw 'Matrix CMake installation failed' }
+      - name: Select wheel-verified native CMake and CTest
+        run: |
+          python -B .github/ci/select-native-cmake.py --github-path "$env:GITHUB_PATH" --report out/ci-bootstrap/native-cmake.json
+          if ($LASTEXITCODE -ne 0) { throw 'Native CMake selection failed' }
       - name: Run compiler-free build fixtures and tiny native codec regression
         run: |
           $python = (Get-Command python -CommandType Application | Select-Object -First 1).Source
@@ -62,6 +66,7 @@ jobs:
           path: |
             out/ci-streamlining/reports/
             out/ci-mechanisms/reports/
+            out/ci-bootstrap/
           if-no-files-found: warn
           retention-days: 7
           compression-level: 1

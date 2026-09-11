@@ -7,28 +7,35 @@ is also declared, but GitHub requires the workflow on the default branch before
 dispatch events are available. No default-branch change is required for the
 commit-marker path.
 
-The two disposable `windows-2022` jobs use the same checkout layout (`source`),
+The three disposable `windows-2022` jobs use the same checkout layout (`source`),
 Python/CMake/Ninja versions, profile, two build workers, and production cache
 constructor. This is a same-path Windows x64 Release experiment, **not SDK
 relocation support**. Moving checkouts or changing the toolchain remains a cache
 miss, by design.
 
-1. The producer configures the actual full-feature dependency graph, computes
+1. A cheap identity job configures the actual graph without building dependency
+   sources, then publishes only a tiny marker and its full production inputs.
+   The dependency job independently configures on another runner, restores this
+   proof, and checks every input and payload hash **before source compilation**.
+   Differences are reported by field. This preflight tests identity/transport,
+   not SDK correctness, and has no rebuild-on-miss fallback.
+2. The dependency producer computes
    its production fingerprint, and optionally restores an exact matching cache.
    Missing dependencies build from source. It must publish a hash-verified
    whole-prefix artifact before saving that exact entry to GitHub's cache.
-2. A new runner independently configures and computes the fingerprint, restores
+3. A new runner independently configures and computes the fingerprint, checks
+   equality before cache lookup, restores
    the producer's exact entry, and requires a verified `hit`. No source-build
    fallback is permitted for this proof. Transport restoration alone is not a
    successful dependency-cache test.
-3. It builds the `lean-release` application default target: GUI, STEP, tests,
+4. It builds the `lean-release` application default target: GUI, STEP, tests,
    all launchers and PDB generation remain enabled. Compiler caching is off in
    this first full-build experiment; the separate tiny native CI lane proves
    the sccache mechanism. Three warm application builds are timed afterward.
-4. CTest runs the full registered suites with 600-second per-suite timeouts and
+5. CTest runs the full registered suites with 600-second per-suite timeouts and
    a 30-minute outer guard. A Catch2 suite contains many individual cases; this
    is not a per-case timeout. A failure remains a failed workflow.
-5. Independently of test-suite success, if compilation succeeded, the package
+6. Independently of test-suite success, if compilation succeeded, the package
    phase verifies generated main-app symbols, compares CLI slicing/STEP outputs
    against the SHA-256-pinned official 2.9.6 ZIP, and packages the original
    geometry. Package staging records inherited runtime extras from the official
@@ -46,7 +53,23 @@ workflow and save cache entries; there is no `pull_request_target`, secret,
 signing, upstream publication or deployment step. Future PR consumers should
 restore only, with the same validation. Dependency caches contain no credentials.
 
-Each hosted job has a 180-minute timeout. Heavy children use two CPUs, an 11 GiB
+After installing the pinned CMake wheel, every job prepends its native
+`cmake/data/bin` directory to subsequent steps' PATH. The bootstrap locates files
+through distribution metadata (without importing a workspace `cmake.py`) and
+checks CMake/CTest against the wheel's SHA-256 RECORD entries. RECORD is local
+wheel integrity evidence, not an independent publisher signature. Production
+cache inputs still include the native executable's exact path, bytes and
+version; the handoff proof also checks the configured `CMAKE_COMMAND`.
+
+This avoids fingerprinting pip's generated launcher, whose bytes differed
+between the producer and consumer in run `34536948353` despite matching CMake
+versions. That run's old cache does not record the native binary hash, so it is
+not relabelled or reused under the corrected identity. The first corrected run
+requires a new dependency build; subsequent exact matches may reuse it. No
+version-only fallback or excluded hash field is introduced.
+
+The identity job has a 15-minute timeout; each build job has 180 minutes.
+Heavy children use two CPUs, an 11 GiB
 sampled process-tree RSS threshold, and 2 GiB physical/commit reserves. These
 settings apply **only to disposable hosted runners**. The scripts reject local
 execution and leave desktop build defaults unchanged. Sampling is not a hard
