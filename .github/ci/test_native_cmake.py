@@ -102,8 +102,16 @@ class NativeCMakeTests(unittest.TestCase):
 
     def test_missing_native_file_rejected(self):
         (self.root / 'cmake/data/bin/ctest.exe').unlink()
-        with self.assertRaises(FileNotFoundError):
-            self.select()
+        github_path, report = self.root / 'github-path', self.root / 'native.json'
+        # Some importlib.metadata versions filter nonexistent RECORD paths;
+        # others leave them for lstat to reject. Both must fail before execution
+        # or publishing a usable PATH/report, without weakening the selector.
+        with patch.object(native.subprocess, 'run') as version, \
+                self.assertRaisesRegex((ValueError, FileNotFoundError), 'ctest'):
+            native.publish(github_path, report, self.distribution, windows=True)
+        version.assert_not_called()
+        self.assertFalse(report.exists())
+        self.assertFalse(github_path.exists())
 
     def test_nonregular_native_file_rejected(self):
         path = self.root / 'cmake/data/bin/ctest.exe'
